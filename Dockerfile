@@ -38,7 +38,8 @@ RUN set -eux; \
     tar -xzf makemkv-oss-${MAKEMKV_VERSION}.tar.gz; \
     tar -xzf makemkv-bin-${MAKEMKV_VERSION}.tar.gz; \
     cd makemkv-oss-${MAKEMKV_VERSION}; ./configure; make -j"$(nproc)"; make install; \
-    cd /makemkv-bin-${MAKEMKV_VERSION}; make -j"$(nproc)"; make install; \
+    cd /makemkv-bin-${MAKEMKV_VERSION}; mkdir -p tmp; \
+	touch tmp/eula_accepted; make -j"$(nproc)"; make install; \
     rm -rf /makemkv-* /makemkv*.tar.gz
 
 WORKDIR /opt/jack

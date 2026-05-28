@@ -14,4 +14,4 @@ def main() -> None:
     _run("/lib/systemd/systemd-udevd", "--daemon")
     _run("udevadm", "control", "--reload")
     _run("udevadm", "trigger", "--subsystem-match=block", "--action=change")
-    os.execvp(sys.executable, [sys.executable, "-m", "jack", "serve", *sys.argv[1:]])
+    os.execvp(sys.executable, [sys.executable, "-m", "jack", "serve"])

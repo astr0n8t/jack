@@ -25,6 +25,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     whipper \
     wget \
     zlib1g-dev \
+    openjdk-11-jre-headless \
+    gnupg \
+    dirmngr \
+    qtbase5-dev \
  && rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \

@@ -1,5 +1,7 @@
 # jack
 
+note: vibecoded using copilot
+
 jack is a minimal multi-drive autoripper built in Python 3. It uses udev to queue discs, MakeMKV for video, whipper for audio, ffmpeg for FLAC retagging, and a lightweight web UI to monitor and control jobs.
 
 ## Features

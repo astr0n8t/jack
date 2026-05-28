@@ -1,7 +1,7 @@
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG MAKEMKV_VERSION=1.18.1
+ARG MAKEMKV_VERSION=1.18.3
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \

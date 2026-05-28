@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from jack import container
 from jack.config import Config
 from jack.ripper import JobRunner, build_command, classify_disc, ffmpeg_metadata_args
 from jack.store import StateStore, parse_metadata
@@ -72,6 +73,22 @@ class CommandTests(unittest.TestCase):
 
     def test_ffmpeg_metadata_args(self) -> None:
         self.assertEqual(ffmpeg_metadata_args({"artist": "A", "album": "B"}), ["-metadata", "artist=A", "-metadata", "album=B"])
+
+
+class ContainerRunnerTests(unittest.TestCase):
+    @mock.patch("jack.container.os.execvp")
+    @mock.patch("jack.container._run")
+    def test_container_starts_udev_and_execs_serve(self, run_mock: mock.Mock, execvp_mock: mock.Mock) -> None:
+        container.main()
+        self.assertEqual(
+            run_mock.call_args_list,
+            [
+                mock.call("/lib/systemd/systemd-udevd", "--daemon"),
+                mock.call("udevadm", "control", "--reload"),
+                mock.call("udevadm", "trigger", "--subsystem-match=block", "--action=change"),
+            ],
+        )
+        execvp_mock.assert_called_once_with(container.sys.executable, [container.sys.executable, "-m", "jack", "serve"])
 
 
 if __name__ == "__main__":

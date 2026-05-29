@@ -5,7 +5,7 @@ import json
 import os
 
 from .config import load_config
-from .ripper import JobRunner, classify_disc
+from .ripper import JobRunner, classify_disc, identify_video_metadata
 from .store import StateStore
 from .web import serve
 
@@ -29,7 +29,10 @@ def command_udev(args: argparse.Namespace) -> int:
     disc_type = args.disc_type or classify_disc(os.environ)
     device = args.device
     drive = store.get_drive(device)
-    metadata_json = drive["metadata_json"] if drive else "{}"
+    metadata = json.loads(str(drive["metadata_json"])) if drive else {}
+    if disc_type == "video":
+        metadata.update(identify_video_metadata(device, os.environ))
+    metadata_json = json.dumps(metadata, indent=2, sort_keys=True)
     store.upsert_drive(device, disc_type, status="idle", metadata_json=metadata_json)
     job_id = store.enqueue_job(device, disc_type, metadata_json=metadata_json, source="udev")
     print(job_id)

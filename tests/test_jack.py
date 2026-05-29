@@ -6,9 +6,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from jack import __main__
 from jack import container
 from jack.config import Config
-from jack.ripper import JobRunner, build_command, classify_disc, ffmpeg_metadata_args
+from jack.ripper import JobRunner, build_command, classify_disc, ffmpeg_metadata_args, identify_video_metadata
 from jack.store import StateStore, parse_metadata
 
 
@@ -21,6 +22,28 @@ class DiscClassificationTests(unittest.TestCase):
 
     def test_video_disc_is_default(self) -> None:
         self.assertEqual(classify_disc({}), "video")
+
+    def test_identify_bluray_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mount = Path(tmp)
+            xml_path = mount / "BDMV" / "META" / "DL" / "bdmt_eng.xml"
+            xml_path.parent.mkdir(parents=True, exist_ok=True)
+            xml_path.write_text(
+                "<disclib><discinfo><title><name>EXAMPLE MOVIE - BLU-RAY</name></title></discinfo></disclib>",
+                encoding="utf-8",
+            )
+            with mock.patch("jack.ripper.find_mountpoint", return_value=mount):
+                metadata = identify_video_metadata("/dev/sr0", {})
+            self.assertEqual(metadata["disctype"], "bluray")
+            self.assertEqual(metadata["title"], "EXAMPLE MOVIE")
+
+    def test_identify_dvd_metadata_uses_label(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mount = Path(tmp)
+            (mount / "VIDEO_TS").mkdir(parents=True, exist_ok=True)
+            with mock.patch("jack.ripper.find_mountpoint", return_value=mount):
+                metadata = identify_video_metadata("/dev/sr0", {"ID_FS_LABEL": "MY_DISC_TITLE"})
+            self.assertEqual(metadata, {"disctype": "dvd", "title": "MY DISC TITLE"})
 
 
 class StoreTests(unittest.TestCase):
@@ -73,6 +96,27 @@ class CommandTests(unittest.TestCase):
 
     def test_ffmpeg_metadata_args(self) -> None:
         self.assertEqual(ffmpeg_metadata_args({"artist": "A", "album": "B"}), ["-metadata", "artist=A", "-metadata", "album=B"])
+
+    def test_udev_event_applies_video_identification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict("os.environ", {}, clear=True):
+                with mock.patch("jack.__main__.load_config") as load_config:
+                    load_config.return_value = Config(
+                        state_dir=Path(tmp),
+                        output_dir=Path(tmp) / "output",
+                        host="127.0.0.1",
+                        port=8080,
+                        webhook_url=None,
+                        webhook_success_url=None,
+                        webhook_error_url=None,
+                        poll_interval=0.1,
+                    )
+                    with mock.patch("jack.__main__.identify_video_metadata", return_value={"title": "Movie", "disctype": "dvd"}):
+                        code = __main__.command_udev(mock.Mock(device="/dev/sr0", disc_type="video"))
+            self.assertEqual(code, 0)
+            store = StateStore(Path(tmp) / "jack.db")
+            drive = store.get_drive("/dev/sr0")
+            self.assertEqual(json.loads(str(drive["metadata_json"])), {"disctype": "dvd", "title": "Movie"})
 
 
 class ContainerRunnerTests(unittest.TestCase):

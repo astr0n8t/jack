@@ -75,7 +75,7 @@ def _bluray_title(mountpoint: Path) -> tuple[str, str] | None:
 
 
 def _dvd_label(device: str, env: Mapping[str, str]) -> str | None:
-    for key in ("ID_FS_LABEL", "ID_FS_LABEL_ENC", "ID_CDROM_MEDIA_SESSION_LAST_OFFSET"):
+    for key in ("ID_FS_LABEL", "ID_FS_LABEL_ENC"):
         value = str(env.get(key) or "").strip()
         if value:
             return value.replace("_", " ").strip()
@@ -103,7 +103,7 @@ def identify_video_metadata(device: str, env: Mapping[str, str]) -> dict[str, st
                 if title:
                     metadata["title"] = title
                 metadata["disctype"] = "bluray"
-                metadata["year"] = year[:4]
+                metadata["year"] = year
             else:
                 metadata["disctype"] = "bluray"
         elif (mounted / "VIDEO_TS").is_dir():

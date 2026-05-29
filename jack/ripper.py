@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import subprocess
 import threading
+import unicodedata
+import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 from typing import Mapping
 from urllib import request
@@ -17,6 +20,101 @@ def classify_disc(env: Mapping[str, str]) -> str:
     if audio_tracks and not data_tracks:
         return "audio"
     return "video"
+
+
+def _run(command: list[str]) -> str | None:
+    try:
+        completed = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    return completed.stdout
+
+
+def find_mountpoint(device: str) -> Path | None:
+    output = _run(["findmnt", "--json", device])
+    if not output:
+        return None
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        return None
+    for mount in data.get("filesystems", []):
+        target = str(mount.get("target") or "").strip()
+        if not target:
+            continue
+        mountpoint = Path(target)
+        if mountpoint.is_dir():
+            return mountpoint
+    return None
+
+
+def _clean_video_title(title: str) -> str:
+    value = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode().strip()
+    for fragment in (" - Blu-rayTM", " Blu-rayTM", " - BLU-RAYTM", " - BLU-RAY", " - Blu-ray"):
+        value = value.replace(fragment, "")
+    return " ".join(value.split())
+
+
+def _bluray_title(mountpoint: Path) -> tuple[str, str] | None:
+    xml_file = mountpoint / "BDMV" / "META" / "DL" / "bdmt_eng.xml"
+    if not xml_file.exists():
+        return None
+    try:
+        root = ET.parse(xml_file).getroot()
+    except ET.ParseError:
+        return None
+    title = ""
+    for node in root.iter():
+        if node.tag.endswith("name") and node.text:
+            title = node.text
+            break
+    if not title:
+        return None
+    year = datetime.fromtimestamp(xml_file.stat().st_mtime).strftime("%Y")
+    return (_clean_video_title(title), year)
+
+
+def _dvd_label(device: str, env: Mapping[str, str]) -> str | None:
+    for key in ("ID_FS_LABEL", "ID_FS_LABEL_ENC", "ID_CDROM_MEDIA_SESSION_LAST_OFFSET"):
+        value = str(env.get(key) or "").strip()
+        if value:
+            return value.replace("_", " ").strip()
+    output = _run(["blkid", "-o", "value", "-s", "LABEL", device])
+    if output:
+        return output.strip().replace("_", " ").strip()
+    return None
+
+
+def identify_video_metadata(device: str, env: Mapping[str, str]) -> dict[str, str]:
+    mounted = find_mountpoint(device)
+    mounted_here = False
+    if mounted is None:
+        _run(["mount", "--source", device])
+        mounted = find_mountpoint(device)
+        mounted_here = mounted is not None
+    if mounted is None:
+        return {}
+    try:
+        metadata: dict[str, str] = {}
+        if (mounted / "BDMV").is_dir():
+            bluray = _bluray_title(mounted)
+            if bluray:
+                title, year = bluray
+                if title:
+                    metadata["title"] = title
+                metadata["disctype"] = "bluray"
+                metadata["year"] = year[:4]
+            else:
+                metadata["disctype"] = "bluray"
+        elif (mounted / "VIDEO_TS").is_dir():
+            metadata["disctype"] = "dvd"
+            label = _dvd_label(device, env)
+            if label:
+                metadata["title"] = _clean_video_title(label)
+        return metadata
+    finally:
+        if mounted_here:
+            _run(["umount", device])
 
 
 def build_output_dir(base: Path, disc_type: str, device: str, job_id: int) -> Path:

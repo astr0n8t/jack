@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 
 from .config import load_config
 from .ripper import JobRunner, classify_disc, identify_video_metadata
@@ -28,8 +29,7 @@ def command_udev(args: argparse.Namespace) -> int:
     store = StateStore(config.state_dir / "jack.db")
     disc_type = args.disc_type or classify_disc(os.environ)
     device = args.device
-    drive = store.get_drive(device)
-    metadata = json.loads(str(drive["metadata_json"])) if drive else {}
+    metadata: dict[str, str] = {}
     if disc_type == "video":
         metadata.update(identify_video_metadata(device, os.environ))
     metadata_json = json.dumps(metadata, indent=2, sort_keys=True)
@@ -43,7 +43,15 @@ def command_udev(args: argparse.Namespace) -> int:
 def command_scan(args: argparse.Namespace) -> int:
     config = load_config()
     store = StateStore(config.state_dir / "jack.db")
-    metadata_json = json.dumps(json.loads(args.metadata or "{}"), indent=2, sort_keys=True)
+    try:
+        parsed = json.loads(args.metadata or "{}")
+    except json.JSONDecodeError as exc:
+        print(f"Invalid metadata JSON: {exc}", file=sys.stderr)
+        return 1
+    if not isinstance(parsed, dict):
+        print("Invalid metadata JSON: must be a JSON object", file=sys.stderr)
+        return 1
+    metadata_json = json.dumps(parsed, indent=2, sort_keys=True)
     store.upsert_drive(args.device, args.disc_type, status="idle", metadata_json=metadata_json)
     job_id = store.enqueue_job(args.device, args.disc_type, metadata_json=metadata_json, source="manual", force=True)
     print(job_id)

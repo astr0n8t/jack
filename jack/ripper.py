@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tempfile
 import threading
 import unicodedata
 import xml.etree.ElementTree as ET
@@ -88,10 +89,15 @@ def _dvd_label(device: str, env: Mapping[str, str]) -> str | None:
 def identify_video_metadata(device: str, env: Mapping[str, str]) -> dict[str, str]:
     mounted = find_mountpoint(device)
     mounted_here = False
+    temp_dir: tempfile.TemporaryDirectory[str] | None = None
     if mounted is None:
-        _run(["mount", "--source", device])
-        mounted = find_mountpoint(device)
-        mounted_here = mounted is not None
+        temp_dir = tempfile.TemporaryDirectory(prefix="jack-mount-")
+        target = Path(temp_dir.name)
+        if _run(["mount", "--source", device, "--target", str(target), "-o", "ro"]) is None:
+            temp_dir.cleanup()
+            return {}
+        mounted = target
+        mounted_here = True
     if mounted is None:
         return {}
     try:
@@ -114,7 +120,9 @@ def identify_video_metadata(device: str, env: Mapping[str, str]) -> dict[str, st
         return metadata
     finally:
         if mounted_here:
-            _run(["umount", device])
+            _run(["umount", str(mounted)])
+        if temp_dir is not None:
+            temp_dir.cleanup()
 
 
 def build_output_dir(base: Path, disc_type: str, device: str, job_id: int) -> Path:

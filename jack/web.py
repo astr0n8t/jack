@@ -31,13 +31,21 @@ form.inline { display: inline; }
 """
 
 
+def _safe_metadata(text: str) -> dict[str, object]:
+    try:
+        data = json.loads(text or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def render_page(store: StateStore, message: str = "") -> bytes:
     drives = store.list_drives()
     jobs = store.list_jobs()
     cards: list[str] = []
     for drive in drives:
         latest = store.latest_job_for_drive(str(drive["device"]))
-        metadata = json.dumps(json.loads(str(drive["metadata_json"])), indent=2)
+        metadata = json.dumps(_safe_metadata(str(drive["metadata_json"])), indent=2)
         cards.append(
             f"""
             <section class='card'>

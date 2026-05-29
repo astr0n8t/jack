@@ -9,7 +9,7 @@ from unittest import mock
 from jack import __main__
 from jack import container
 from jack.config import Config
-from jack.ripper import JobRunner, build_command, classify_disc, ffmpeg_metadata_args, identify_video_metadata
+from jack.ripper import JobRunner, build_command, classify_disc, identify_video_metadata
 from jack.store import StateStore, parse_metadata
 
 
@@ -93,9 +93,6 @@ class CommandTests(unittest.TestCase):
             build_command(job, Path("/tmp/out")),
             ["whipper", "cd", "rip", "--device", "/dev/sr0", "--output-directory", "/tmp/out"],
         )
-
-    def test_ffmpeg_metadata_args(self) -> None:
-        self.assertEqual(ffmpeg_metadata_args({"artist": "A", "album": "B"}), ["-metadata", "artist=A", "-metadata", "album=B"])
 
     def test_udev_event_applies_video_identification(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

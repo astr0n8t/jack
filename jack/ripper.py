@@ -11,7 +11,7 @@ from typing import Mapping
 from urllib import request
 
 from .config import Config
-from .store import StateStore, parse_metadata
+from .store import StateStore
 
 
 def classify_disc(env: Mapping[str, str]) -> str:
@@ -138,35 +138,6 @@ def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
     return ["makemkvcon", "mkv", f"dev:{device}", "all", str(output_dir)]
 
 
-def ffmpeg_metadata_args(metadata: Mapping[str, str]) -> list[str]:
-    args: list[str] = []
-    for key, value in metadata.items():
-        args.extend(["-metadata", f"{key}={value}"])
-    return args
-
-
-def apply_audio_metadata(output_dir: Path, metadata_json: str) -> None:
-    metadata = parse_metadata(metadata_json)
-    if not metadata:
-        return
-    for flac in sorted(output_dir.rglob("*.flac")):
-        tmp = flac.with_suffix(".retag.flac")
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(flac),
-            "-map_metadata",
-            "0",
-            "-codec",
-            "copy",
-            *ffmpeg_metadata_args(metadata),
-            str(tmp),
-        ]
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        tmp.replace(flac)
-
-
 class JobRunner:
     def __init__(self, config: Config, store: StateStore):
         self.config = config
@@ -228,8 +199,6 @@ class JobRunner:
             stdout, _ = process.communicate()
             if process.returncode != 0:
                 raise RuntimeError(stdout.strip() or f"Command failed with exit code {process.returncode}")
-            if str(job["disc_type"]) == "audio":
-                apply_audio_metadata(output_dir, str(job["metadata_json"]))
             finished = self.store.finish_job(job_id, "done", output_path=str(output_dir))
             self.send_webhook("completed", finished)
         except Exception as exc:  # noqa: BLE001

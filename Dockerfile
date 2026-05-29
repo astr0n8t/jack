@@ -9,7 +9,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cdparanoia \
     curl \
     eject \
-    ffmpeg \
     file \
     flac \
     g++ \

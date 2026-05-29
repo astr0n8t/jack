@@ -85,7 +85,7 @@ def render_page(store: StateStore, message: str = "") -> bytes:
       <body>
         <main>
           <h1>jack</h1>
-          <p>Minimal multi-drive autoripper using udev, MakeMKV, whipper, and ffmpeg.</p>
+          <p>Minimal multi-drive autoripper using udev, MakeMKV, and whipper.</p>
           <p>{html.escape(message)}</p>
           <div class='grid'>{''.join(cards) or "<section class='card'><p>No drives have reported media yet.</p></section>"}</div>
           <section class='card'>

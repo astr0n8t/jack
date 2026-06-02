@@ -136,9 +136,11 @@ def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
         return [
             "whipper",
             "cd",
-            "rip",
             "--device",
             device,
+            "rip",
+            "--cover-art",
+            "complete",
         ]
     return ["makemkvcon", "mkv", f"dev:{device}", "all", str(output_dir)]
 

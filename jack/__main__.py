@@ -13,7 +13,6 @@ from .web import serve
 
 
 def command_serve(_args: argparse.Namespace) -> int:
-    os.environ["XDG_CONFIG_HOME"] = "/root"
     config = load_config()
     config.state_dir.mkdir(parents=True, exist_ok=True)
     config.output_dir.mkdir(parents=True, exist_ok=True)

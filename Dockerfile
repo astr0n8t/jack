@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     pkg-config \
     python3 \
+	python3-setuptools \
     udev \
     whipper \
     wget \

@@ -28,6 +28,8 @@ button.secondary { background: #334155; }
 .badge.error { background: #b91c1c; }
 small { color: #94a3b8; }
 form.inline { display: inline; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: .4rem; border-bottom: 1px solid #1f2937; }
 """
 
 
@@ -45,7 +47,49 @@ def render_page(store: StateStore, message: str = "") -> bytes:
     cards: list[str] = []
     for drive in drives:
         latest = store.latest_job_for_drive(str(drive["device"]))
-        metadata = json.dumps(_safe_metadata(str(drive["metadata_json"])), indent=2)
+        metadata_data = _safe_metadata(str(drive["metadata_json"]))
+        metadata = json.dumps(metadata_data, indent=2)
+        tracks = metadata_data.get("makemkv_tracks", [])
+        selected_tracks = {
+            str(track_id)
+            for track_id in metadata_data.get("selected_tracks", [])
+            if str(track_id).isdigit()
+        }
+        tracks_markup = ""
+        if isinstance(tracks, list) and tracks:
+            rows = []
+            for track in tracks:
+                if not isinstance(track, dict):
+                    continue
+                track_id = str(track.get("id", "")).strip()
+                if not track_id.isdigit():
+                    continue
+                checked = "checked" if track_id in selected_tracks else ""
+                rows.append(
+                    "<tr>"
+                    f"<td><input type='checkbox' name='track' value='{html.escape(track_id)}' {checked}></td>"
+                    f"<td>{html.escape(str(track.get('id', '')))}</td>"
+                    f"<td>{html.escape(str(track.get('name', '')))}</td>"
+                    f"<td>{html.escape(str(track.get('duration', '')))}</td>"
+                    f"<td>{html.escape(str(track.get('chapters', '')))}</td>"
+                    f"<td>{html.escape(str(track.get('filesize_bytes', '')))}</td>"
+                    "</tr>"
+                )
+            if rows:
+                tracks_markup = f"""
+                <form method='post'>
+                  <input type='hidden' name='action' value='queue-selected-tracks'>
+                  <input type='hidden' name='device' value='{html.escape(str(drive['device']))}'>
+                  <h3>MakeMKV titles</h3>
+                  <table>
+                    <thead><tr><th>Rip</th><th>ID</th><th>Name</th><th>Duration</th><th>Chapters</th><th>Bytes</th></tr></thead>
+                    <tbody>{''.join(rows)}</tbody>
+                  </table>
+                  <div>
+                    <button type='submit'>Rip selected tracks</button>
+                  </div>
+                </form>
+                """
         cards.append(
             f"""
             <section class='card'>
@@ -54,6 +98,7 @@ def render_page(store: StateStore, message: str = "") -> bytes:
               <span class='badge {html.escape(str(drive['disc_type']))}'>{html.escape(str(drive['disc_type']))}</span></p>
               <p><small>Last seen {html.escape(str(drive['last_seen']))}</small></p>
               <p>{html.escape(str(drive['last_error'] or 'No errors recorded.'))}</p>
+              {tracks_markup}
               <form method='post'>
                 <input type='hidden' name='action' value='save-metadata'>
                 <input type='hidden' name='device' value='{html.escape(str(drive['device']))}'>
@@ -143,6 +188,28 @@ class JackHandler(BaseHTTPRequestHandler):
                 parsed = json.dumps(parse_metadata(metadata_text), indent=2, sort_keys=True)
                 self.store.set_drive_metadata(device, parsed)
                 message = f"Saved metadata for {device}"
+            elif action == "queue-selected-tracks":
+                drive = self.store.get_drive(device)
+                if drive is None:
+                    raise ValueError(f"Unknown drive {device}")
+                metadata = _safe_metadata(str(drive["metadata_json"]))
+                available = {
+                    str(track.get("id"))
+                    for track in metadata.get("makemkv_tracks", [])
+                    if isinstance(track, dict) and str(track.get("id", "")).isdigit()
+                }
+                selected = [track_id for track_id in params.get("track", []) if track_id in available]
+                if not selected:
+                    raise ValueError("Select at least one track")
+                metadata["selected_tracks"] = [int(track_id) for track_id in selected]
+                metadata_json = json.dumps(metadata, indent=2, sort_keys=True)
+                self.store.set_drive_metadata(device, metadata_json)
+                latest = self.store.latest_job_for_drive(device)
+                if latest is None or latest["status"] not in ("queued", "running"):
+                    job_id = self.store.enqueue_job(device, str(drive["disc_type"]), metadata_json=metadata_json, source="web", force=True)
+                    message = f"Queued selected tracks for {device} as job {job_id}"
+                else:
+                    message = f"Updated selected tracks for {device}"
             else:
                 raise ValueError("Unknown action")
         except Exception as exc:  # noqa: BLE001

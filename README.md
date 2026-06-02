@@ -9,7 +9,7 @@ jack is a minimal multi-drive autoripper built in Python 3. It uses udev to queu
 - udev-triggered disc detection
 - MakeMKV video ripping
 - whipper audio ripping to FLAC
-- Simple web UI for status, errors, eject, restart, and manual metadata JSON
+- Simple web UI for status, errors, eject, restart, manual metadata JSON, and MakeMKV track selection before video ripping
 - Multiple drive support
 - Optional success and error webhooks
 

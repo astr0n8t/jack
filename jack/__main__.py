@@ -6,7 +6,7 @@ import os
 import sys
 
 from .config import load_config
-from .ripper import JobRunner, classify_disc, discover_makemkv_tracks, identify_video_metadata
+from .ripper import VIDEO_TRACK_SCAN_SOURCE, JobRunner, classify_disc, identify_video_metadata
 from .store import StateStore
 from .web import serve
 
@@ -33,14 +33,11 @@ def command_udev(args: argparse.Namespace) -> int:
     metadata: dict[str, object] = {}
     if disc_type == "video":
         metadata.update(identify_video_metadata(device, os.environ))
-        tracks = discover_makemkv_tracks(device)
-        if tracks:
-            metadata["makemkv_tracks"] = tracks
-            metadata["selected_tracks"] = [track["id"] for track in tracks if isinstance(track, dict) and "id" in track]
     metadata_json = json.dumps(metadata, indent=2, sort_keys=True)
     store.upsert_drive(device, disc_type, status="idle", metadata_json=metadata_json)
     if disc_type == "video":
-        print("pending-selection")
+        job_id = store.enqueue_job(device, disc_type, metadata_json=metadata_json, source=VIDEO_TRACK_SCAN_SOURCE)
+        print(job_id)
         return 0
     job_id = store.enqueue_job(device, disc_type, metadata_json=metadata_json, source="udev")
     print(job_id)

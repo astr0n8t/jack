@@ -133,10 +133,11 @@ class ContainerRunnerTests(unittest.TestCase):
 
 
 class PackagingTests(unittest.TestCase):
-    def test_udev_rule_triggers_when_media_present(self) -> None:
+    def test_udev_rule_uses_media_state_filter(self) -> None:
         rules_path = Path(__file__).resolve().parents[1] / "packaging" / "99-jack.rules"
         rules = rules_path.read_text(encoding="utf-8")
-        self.assertIn('ENV{ID_CDROM_MEDIA}=="1"', rules)
+        self.assertIn('ENV{ID_CDROM_MEDIA_STATE}!="blank"', rules)
+        self.assertIn('KERNEL=="sr[0-9]*"', rules)
         self.assertNotIn('ENV{DISK_MEDIA_CHANGE}=="1"', rules)
 
 

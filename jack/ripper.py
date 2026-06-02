@@ -254,23 +254,24 @@ class JobRunner:
         job = self.store.get_job(job_id)
         if job is None:
             return
-        if (
-            str(job["disc_type"]) == "video"
-            and str(job["source"]) == VIDEO_TRACK_SCAN_SOURCE
-        ):
-            self._run_track_discovery_job(job_id, job)
-            return
-        output_dir = build_output_dir(self.config.output_dir, str(job["disc_type"]), str(job["device"]), job_id)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        command = build_command(job, output_dir)
-        job = self.store.mark_job_running(job_id, " ".join(command))
+        device = str(job["device"])
         process: subprocess.Popen[str] | None = None
         try:
+            if (
+                str(job["disc_type"]) == "video"
+                and str(job["source"]) == VIDEO_TRACK_SCAN_SOURCE
+            ):
+                self._run_track_discovery_job(job_id, job)
+                return
+            output_dir = build_output_dir(self.config.output_dir, str(job["disc_type"]), device, job_id)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            command = build_command(job, output_dir)
+            job = self.store.mark_job_running(job_id, " ".join(command))
             os.environ["XDG_CONFIG_HOME"] = "/root"
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=os.environ)
             with self.lock:
-                self.starting.discard(str(job["device"]))
-                self.processes[str(job["device"])] = (job_id, process)
+                self.starting.discard(device)
+                self.processes[device] = (job_id, process)
             stdout, _ = process.communicate()
             if process.returncode != 0:
                 raise RuntimeError(stdout.strip() or f"Command failed with exit code {process.returncode}")
@@ -281,9 +282,9 @@ class JobRunner:
             self.send_webhook("error", finished)
         finally:
             with self.lock:
-                self.starting.discard(str(job["device"]))
+                self.starting.discard(device)
                 if process is not None:
-                    self.processes.pop(str(job["device"]), None)
+                    self.processes.pop(device, None)
 
     def _run_track_discovery_job(self, job_id: int, job: Mapping[str, object]) -> None:
         device = str(job["device"])

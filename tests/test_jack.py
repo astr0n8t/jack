@@ -119,6 +119,35 @@ class RunnerTests(unittest.TestCase):
                 {"makemkv_tracks": [{"id": 0, "name": "Main"}], "selected_tracks": [0], "title": "Movie"},
             )
 
+    def test_video_track_scan_clears_starting_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            store = StateStore(base / "jack.db")
+            store.upsert_drive("/dev/sr0", "video", metadata_json='{"title":"Movie"}')
+            job_id = store.enqueue_job(
+                "/dev/sr0",
+                "video",
+                metadata_json='{"title":"Movie"}',
+                source=VIDEO_TRACK_SCAN_SOURCE,
+            )
+            runner = JobRunner(
+                Config(
+                    state_dir=base,
+                    output_dir=base / "output",
+                    host="127.0.0.1",
+                    port=8080,
+                    webhook_url=None,
+                    webhook_success_url=None,
+                    webhook_error_url=None,
+                    poll_interval=0.1,
+                ),
+                store,
+            )
+            runner.starting.add("/dev/sr0")
+            with mock.patch("jack.ripper.discover_makemkv_tracks", return_value=[{"id": 0, "name": "Main"}]):
+                runner._run_job(job_id)
+            self.assertNotIn("/dev/sr0", runner.starting)
+
 
 class CommandTests(unittest.TestCase):
     def test_audio_command_uses_whipper(self) -> None:

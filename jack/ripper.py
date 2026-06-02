@@ -134,7 +134,7 @@ def build_output_dir(base: Path, disc_type: str, title: str) -> Path:
     return base / disc_type / title
 
 
-def build_command(job: Mapping[str, object], output_dir: Path, chapter: None) -> list[str]:
+def build_command(job: Mapping[str, object], output_dir: Path, chapter: str = "") -> list[str]:
     device = str(job["device"])
     disc_type = str(job["disc_type"])
     if disc_type == "audio":

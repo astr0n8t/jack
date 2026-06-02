@@ -275,16 +275,22 @@ class JobRunner:
                             if str(track).isdigit():
                                 command = build_command(job, output_dir, str(track))
                                 process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                                with self.lock:
+                                    self.starting.discard(device)
+                                    self.processes[device] = (job_id, process)
+                                stdout, _ = process.communicate()
+                                if process.returncode != 0:
+                                    raise RuntimeError(stdout.strip() or f"Command failed with exit code {process.returncode}")
             else:
                 command = build_command(job, output_dir)
                 job = self.store.mark_job_running(job_id, " ".join(command))
                 process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            with self.lock:
-                self.starting.discard(device)
-                self.processes[device] = (job_id, process)
-            stdout, _ = process.communicate()
-            if process.returncode != 0:
-                raise RuntimeError(stdout.strip() or f"Command failed with exit code {process.returncode}")
+                with self.lock:
+                    self.starting.discard(device)
+                    self.processes[device] = (job_id, process)
+                stdout, _ = process.communicate()
+                if process.returncode != 0:
+                    raise RuntimeError(stdout.strip() or f"Command failed with exit code {process.returncode}")
             finished = self.store.finish_job(job_id, "done", output_path=str(output_dir))
             self.send_webhook("completed", finished)
         except Exception as exc:  # noqa: BLE001

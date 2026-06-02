@@ -132,5 +132,13 @@ class ContainerRunnerTests(unittest.TestCase):
         execvp_mock.assert_called_once_with(container.sys.executable, [container.sys.executable, "-m", "jack", "serve"])
 
 
+class PackagingTests(unittest.TestCase):
+    def test_udev_rule_triggers_when_media_present(self) -> None:
+        rules_path = Path(__file__).resolve().parents[1] / "packaging" / "99-jack.rules"
+        rules = rules_path.read_text(encoding="utf-8")
+        self.assertIn('ENV{ID_CDROM_MEDIA}=="1"', rules)
+        self.assertNotIn('ENV{DISK_MEDIA_CHANGE}=="1"', rules)
+
+
 if __name__ == "__main__":
     unittest.main()

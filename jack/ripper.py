@@ -17,8 +17,7 @@ from .store import StateStore
 
 def classify_disc(env: Mapping[str, str]) -> str:
     audio_tracks = int(env.get("ID_CDROM_MEDIA_TRACK_COUNT_AUDIO") or "0")
-    data_tracks = int(env.get("ID_CDROM_MEDIA_TRACK_COUNT_DATA") or "0")
-    if audio_tracks and not data_tracks:
+    if audio_tracks > 0:
         return "audio"
     return "video"
 

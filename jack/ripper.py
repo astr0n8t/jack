@@ -140,8 +140,6 @@ def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
             "rip",
             "--device",
             device,
-            "--output-directory",
-            str(output_dir),
         ]
     return ["makemkvcon", "mkv", f"dev:{device}", "all", str(output_dir)]
 

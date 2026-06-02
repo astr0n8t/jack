@@ -208,6 +208,18 @@ class CommandTests(unittest.TestCase):
         job = {"device": "/dev/sr0", "disc_type": "video", "metadata_json": '{"selected_tracks":[1,5]}'}
         self.assertEqual(build_command(job, Path("/tmp/out")), ["makemkvcon", "mkv", "dev:/dev/sr0", "1,5", "/tmp/out"])
 
+    def test_build_command_accepts_sqlite_row_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(Path(tmp) / "jack.db")
+            store.upsert_drive("/dev/sr0", "video", metadata_json='{"selected_tracks":[2,4]}')
+            job_id = store.enqueue_job("/dev/sr0", "video", metadata_json='{"selected_tracks":[2,4]}')
+            job = store.get_job(job_id)
+            self.assertIsNotNone(job)
+            self.assertEqual(
+                build_command(job, Path("/tmp/out")),  # type: ignore[arg-type]
+                ["makemkvcon", "mkv", "dev:/dev/sr0", "2,4", "/tmp/out"],
+            )
+
     def test_discover_makemkv_tracks_parses_titles(self) -> None:
         output = (
             'TINFO:0,27,0,"Main Feature"\n'

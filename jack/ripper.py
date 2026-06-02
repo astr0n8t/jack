@@ -150,7 +150,8 @@ def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
         ]
     target = "all"
     try:
-        metadata = json.loads(str(job.get("metadata_json") or "{}"))
+        metadata_json = job["metadata_json"] if "metadata_json" in job.keys() else "{}"
+        metadata = json.loads(str(metadata_json or "{}"))
     except json.JSONDecodeError:
         metadata = {}
     if isinstance(metadata, dict):

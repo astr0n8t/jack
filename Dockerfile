@@ -45,7 +45,7 @@ RUN set -eux; \
 WORKDIR /opt/jack
 COPY ./packaging /opt/jack/packaging
 COPY ./jack /opt/jack/jack
-RUN install -m 755 packaging/jack-udev /usr/local/bin/jack-udev \
+RUN install -m 755 packaging/jack-udev /opt/jack/jack-udev \
  && install -m 755 packaging/udev-start /usr/local/bin/udev-start \
  && install -m 644 packaging/99-jack.rules /etc/udev/rules.d/99-jack.rules \
  && mkdir -p /var/lib/jack /data/output

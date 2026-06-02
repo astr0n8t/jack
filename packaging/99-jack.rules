@@ -1,1 +1,1 @@
-ACTION=="change", SUBSYSTEM=="block", KERNEL=="sr[0-9]*", ENV{ID_CDROM}=="1", ENV{DISK_MEDIA_CHANGE}=="1", RUN+="/usr/local/bin/jack-udev udev-event --device %E{DEVNAME}"
+ACTION=="change", SUBSYSTEM=="block", KERNEL=="sr[0-9]*", ENV{ID_CDROM}=="1", ENV{ID_CDROM_MEDIA_STATE}!="blank", RUN+="/usr/local/bin/jack-udev udev-event --device %E{DEVNAME}"

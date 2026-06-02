@@ -267,8 +267,7 @@ class JobRunner:
             output_dir.mkdir(parents=True, exist_ok=True)
             command = build_command(job, output_dir)
             job = self.store.mark_job_running(job_id, " ".join(command))
-            os.environ["XDG_CONFIG_HOME"] = "/root"
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=os.environ)
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             with self.lock:
                 self.starting.discard(device)
                 self.processes[device] = (job_id, process)

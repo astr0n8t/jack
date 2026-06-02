@@ -94,6 +94,26 @@ class CommandTests(unittest.TestCase):
             ["whipper", "cd", "rip", "--device", "/dev/sr0", "--output-directory", "/tmp/out"],
         )
 
+    def test_video_command_uses_main_feature_title(self) -> None:
+        job = {"device": "/dev/sr0", "disc_type": "video"}
+        output = "\n".join(
+            [
+                'TINFO:0,8,0,"12"',
+                'TINFO:0,11,0,"1000"',
+                'TINFO:1,8,0,"12"',
+                'TINFO:1,11,0,"2000"',
+            ]
+        )
+        with mock.patch("jack.ripper._run", return_value=output):
+            command = build_command(job, Path("/tmp/out"))
+        self.assertEqual(command, ["makemkvcon", "mkv", "dev:/dev/sr0", "1", "/tmp/out"])
+
+    def test_video_command_falls_back_to_all_titles(self) -> None:
+        job = {"device": "/dev/sr0", "disc_type": "video"}
+        with mock.patch("jack.ripper._run", return_value=None):
+            command = build_command(job, Path("/tmp/out"))
+        self.assertEqual(command, ["makemkvcon", "mkv", "dev:/dev/sr0", "all", "/tmp/out"])
+
     def test_udev_event_applies_video_identification(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict("os.environ", {}, clear=True):

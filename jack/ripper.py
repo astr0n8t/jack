@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import subprocess
 import tempfile
@@ -130,6 +131,45 @@ def build_output_dir(base: Path, disc_type: str, device: str, job_id: int) -> Pa
     return base / disc_type / safe_device / str(job_id)
 
 
+def _select_main_feature_title(device: str) -> str | None:
+    output = _run(["makemkvcon", "--robot", "--messages=-stdout", "info", f"dev:{device}"])
+    if not output:
+        return None
+    by_title: dict[int, dict[str, int]] = {}
+    for line in output.splitlines():
+        if not line.startswith("TINFO:"):
+            continue
+        content = line.split(":", 1)[1]
+        try:
+            fields = next(csv.reader([content]))
+        except (csv.Error, StopIteration):
+            continue
+        if len(fields) < 4:
+            continue
+        try:
+            title_id = int(fields[0].strip())
+            info_id = int(fields[1].strip())
+        except ValueError:
+            continue
+        item = by_title.setdefault(title_id, {"chapters": 0, "filesize": 0})
+        value = fields[3].strip()
+        if info_id == 8:
+            try:
+                item["chapters"] = max(item["chapters"], int(value))
+            except ValueError:
+                continue
+        elif info_id == 11:
+            try:
+                item["filesize"] = max(item["filesize"], int(value))
+            except ValueError:
+                continue
+    candidates = [(title_id, values) for title_id, values in by_title.items() if values["chapters"] > 0 or values["filesize"] > 0]
+    if not candidates:
+        return None
+    best_title, _ = min(candidates, key=lambda item: (-item[1]["chapters"], -item[1]["filesize"], item[0]))
+    return str(best_title)
+
+
 def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
     device = str(job["device"])
     disc_type = str(job["disc_type"])
@@ -140,8 +180,11 @@ def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
             "rip",
             "--device",
             device,
+            "--output-directory",
+            str(output_dir),
         ]
-    return ["makemkvcon", "mkv", f"dev:{device}", "all", str(output_dir)]
+    title_selector = _select_main_feature_title(device) or "all"
+    return ["makemkvcon", "mkv", f"dev:{device}", title_selector, str(output_dir)]
 
 
 class JobRunner:

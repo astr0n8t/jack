@@ -134,7 +134,7 @@ def build_output_dir(base: Path, disc_type: str, title: str) -> Path:
     return base / disc_type / title
 
 
-def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
+def build_command(job: Mapping[str, object], output_dir: Path, chapter: None) -> list[str]:
     device = str(job["device"])
     disc_type = str(job["disc_type"])
     if disc_type == "audio":
@@ -150,9 +150,9 @@ def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
             "complete",
         ]
     target = "all"
-    if "target" in job:
-        target = job["target"]
-
+    if chapter:
+        target = chapter
+        
     return ["makemkvcon", "--robot", "--messages=-stdout", "mkv", f"dev:{device}", target, str(output_dir)]
 
 
@@ -273,8 +273,7 @@ class JobRunner:
                         job = self.store.mark_job_running(job_id, f" Running makemkvcon for {len(selected)} tracks")
                         for track in selected:
                             if str(track).isdigit():
-                                job["target"] = str(track)
-                                command = build_command(job, output_dir)
+                                command = build_command(job, output_dir, str(track))
                                 process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             else:
                 command = build_command(job, output_dir)

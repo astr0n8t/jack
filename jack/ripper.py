@@ -140,6 +140,8 @@ def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
             "--device",
             device,
             "rip",
+            "--output-directory",
+            str(output_dir),
             "--cover-art",
             "complete",
         ]

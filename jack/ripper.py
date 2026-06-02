@@ -149,18 +149,10 @@ def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
             "complete",
         ]
     target = "all"
-    try:
-        metadata_json = job["metadata_json"] if "metadata_json" in job.keys() else "{}"
-        metadata = json.loads(str(metadata_json or "{}"))
-    except json.JSONDecodeError:
-        metadata = {}
-    if isinstance(metadata, dict):
-        selected = metadata.get("selected_tracks")
-        if isinstance(selected, list):
-            track_ids = [str(int(track)) for track in selected if str(track).isdigit()]
-            if track_ids:
-                target = ",".join(track_ids)
-    return ["makemkvcon", "mkv", f"dev:{device}", target, str(output_dir)]
+    if "target" in job:
+        target = job["target"]
+
+    return ["makemkvcon", "--robot", "--messages=-stdout", "mkv", f"dev:{device}", target, str(output_dir)]
 
 
 def _parse_metadata_json(text: object) -> dict[str, object]:
@@ -266,9 +258,25 @@ class JobRunner:
                 return
             output_dir = build_output_dir(self.config.output_dir, str(job["disc_type"]), device, job_id)
             output_dir.mkdir(parents=True, exist_ok=True)
-            command = build_command(job, output_dir)
-            job = self.store.mark_job_running(job_id, " ".join(command))
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            if str(job["disc_type"]) == "video":
+                try:
+                    metadata_json = job["metadata_json"] if "metadata_json" in job.keys() else "{}"
+                    metadata = json.loads(str(metadata_json or "{}"))
+                except json.JSONDecodeError:
+                    metadata = {}
+                if isinstance(metadata, dict):
+                    selected = metadata.get("selected_tracks")
+                    if isinstance(selected, list):
+                        for track in selected:
+                            if str(track).isdigit():
+                                job["target"] = str(track)
+                                command = build_command(job, output_dir)
+                                job = self.store.mark_job_running(job_id, " ".join(command))
+                                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            else:
+                command = build_command(job, output_dir)
+                job = self.store.mark_job_running(job_id, " ".join(command))
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             with self.lock:
                 self.starting.discard(device)
                 self.processes[device] = (job_id, process)

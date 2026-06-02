@@ -9,7 +9,7 @@ from unittest import mock
 from jack import __main__
 from jack import container
 from jack.config import Config
-from jack.ripper import JobRunner, build_command, classify_disc, identify_video_metadata
+from jack.ripper import JobRunner, build_command, classify_disc, discover_makemkv_tracks, identify_video_metadata
 from jack.store import StateStore, parse_metadata
 
 
@@ -109,11 +109,58 @@ class CommandTests(unittest.TestCase):
                         poll_interval=0.1,
                     )
                     with mock.patch("jack.__main__.identify_video_metadata", return_value={"title": "Movie", "disctype": "dvd"}):
-                        code = __main__.command_udev(mock.Mock(device="/dev/sr0", disc_type="video"))
+                        with mock.patch("jack.__main__.discover_makemkv_tracks", return_value=[{"id": 0, "name": "Main"}]):
+                            code = __main__.command_udev(mock.Mock(device="/dev/sr0", disc_type="video"))
             self.assertEqual(code, 0)
             store = StateStore(Path(tmp) / "jack.db")
             drive = store.get_drive("/dev/sr0")
-            self.assertEqual(json.loads(str(drive["metadata_json"])), {"disctype": "dvd", "title": "Movie"})
+            self.assertEqual(
+                json.loads(str(drive["metadata_json"])),
+                {"disctype": "dvd", "makemkv_tracks": [{"id": 0, "name": "Main"}], "selected_tracks": [0], "title": "Movie"},
+            )
+            self.assertEqual(store.list_jobs(), [])
+
+    def test_udev_event_queues_audio_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict("os.environ", {}, clear=True):
+                with mock.patch("jack.__main__.load_config") as load_config:
+                    load_config.return_value = Config(
+                        state_dir=Path(tmp),
+                        output_dir=Path(tmp) / "output",
+                        host="127.0.0.1",
+                        port=8080,
+                        webhook_url=None,
+                        webhook_success_url=None,
+                        webhook_error_url=None,
+                        poll_interval=0.1,
+                    )
+                    code = __main__.command_udev(mock.Mock(device="/dev/sr0", disc_type="audio"))
+            self.assertEqual(code, 0)
+            store = StateStore(Path(tmp) / "jack.db")
+            job = store.latest_job_for_drive("/dev/sr0")
+            self.assertIsNotNone(job)
+
+    def test_build_command_uses_selected_video_tracks(self) -> None:
+        job = {"device": "/dev/sr0", "disc_type": "video", "metadata_json": '{"selected_tracks":[1,5]}'}
+        self.assertEqual(build_command(job, Path("/tmp/out")), ["makemkvcon", "mkv", "dev:/dev/sr0", "1,5", "/tmp/out"])
+
+    def test_discover_makemkv_tracks_parses_titles(self) -> None:
+        output = (
+            'TINFO:0,27,0,"Main Feature"\n'
+            'TINFO:0,9,0,"02:01:23"\n'
+            "TINFO:0,8,0,\"16\"\n"
+            "TINFO:1,27,0,\"Bonus\"\n"
+        )
+        completed = mock.Mock(stdout=output, stderr="", returncode=0)
+        with mock.patch("subprocess.run", return_value=completed):
+            tracks = discover_makemkv_tracks("/dev/sr0")
+        self.assertEqual(
+            tracks,
+            [
+                {"id": 0, "name": "Main Feature", "duration": "02:01:23", "chapters": 16},
+                {"id": 1, "name": "Bonus"},
+            ],
+        )
 
 
 class ContainerRunnerTests(unittest.TestCase):

@@ -6,6 +6,7 @@ import tempfile
 import threading
 import unicodedata
 import xml.etree.ElementTree as ET
+from csv import reader
 from datetime import datetime
 from pathlib import Path
 from typing import Mapping
@@ -141,7 +142,54 @@ def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
             "--device",
             device,
         ]
-    return ["makemkvcon", "mkv", f"dev:{device}", "all", str(output_dir)]
+    target = "all"
+    try:
+        metadata = json.loads(str(job.get("metadata_json") or "{}"))
+    except json.JSONDecodeError:
+        metadata = {}
+    if isinstance(metadata, dict):
+        selected = metadata.get("selected_tracks")
+        if isinstance(selected, list):
+            track_ids = [str(int(track)) for track in selected if str(track).isdigit()]
+            if track_ids:
+                target = ",".join(track_ids)
+    return ["makemkvcon", "mkv", f"dev:{device}", target, str(output_dir)]
+
+
+def discover_makemkv_tracks(device: str) -> list[dict[str, object]]:
+    try:
+        completed = subprocess.run(
+            ["makemkvcon", "--robot", "--messages=-stdout", "info", f"dev:{device}"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return []
+    by_title: dict[int, dict[str, object]] = {}
+    for line in completed.stdout.splitlines():
+        if not line.startswith("TINFO:"):
+            continue
+        fields = list(reader([line.removeprefix("TINFO:")], skipinitialspace=False))[0]
+        if len(fields) < 4:
+            continue
+        try:
+            title_id = int(fields[0])
+            info_id = int(fields[1])
+        except ValueError:
+            continue
+        value = fields[3].strip()
+        track = by_title.setdefault(title_id, {"id": title_id, "name": f"Title {title_id}"})
+        if info_id == 27 and value:
+            track["name"] = value
+        elif info_id == 9 and value:
+            track["duration"] = value
+        elif info_id == 8 and value.isdigit():
+            track["chapters"] = int(value)
+        elif info_id == 11 and value.isdigit():
+            track["filesize_bytes"] = int(value)
+    return [by_title[key] for key in sorted(by_title)]
 
 
 class JobRunner:

@@ -128,9 +128,10 @@ def identify_video_metadata(device: str, env: Mapping[str, str]) -> dict[str, st
             temp_dir.cleanup()
 
 
-def build_output_dir(base: Path, disc_type: str, device: str, job_id: int) -> Path:
-    safe_device = device.replace("/", "_").strip("_") or "drive"
-    return base / disc_type / safe_device / str(job_id)
+def build_output_dir(base: Path, disc_type: str, title: str) -> Path:
+    if disc_type == "audio":
+        return base / disc_type
+    return base / disc_type / title
 
 
 def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
@@ -256,15 +257,17 @@ class JobRunner:
             ):
                 self._run_track_discovery_job(job_id, job)
                 return
-            output_dir = build_output_dir(self.config.output_dir, str(job["disc_type"]), device, job_id)
+            try:
+                metadata_json = job["metadata_json"] if "metadata_json" in job.keys() else "{}"
+                metadata = json.loads(str(metadata_json or "{}"))
+            except json.JSONDecodeError:
+                metadata = {}
+            title = "UNKNOWN " + str(job_id)
+            if isinstance(metadata, dict) and 'title' in metadata:
+                title = metadata['title']              
+            output_dir = build_output_dir(self.config.output_dir, str(job["disc_type"]), title)
             output_dir.mkdir(parents=True, exist_ok=True)
-            if str(job["disc_type"]) == "video":
-                try:
-                    metadata_json = job["metadata_json"] if "metadata_json" in job.keys() else "{}"
-                    metadata = json.loads(str(metadata_json or "{}"))
-                except json.JSONDecodeError:
-                    metadata = {}
-                if isinstance(metadata, dict):
+            if str(job["disc_type"]) == "video" and isinstance(metadata, dict):
                     selected = metadata.get("selected_tracks")
                     if isinstance(selected, list):
                         for track in selected:

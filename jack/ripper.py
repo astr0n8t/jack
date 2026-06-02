@@ -16,6 +16,8 @@ from urllib import request
 from .config import Config
 from .store import StateStore
 
+VIDEO_TRACK_SCAN_SOURCE = "video-track-scan"
+
 
 def classify_disc(env: Mapping[str, str]) -> str:
     audio_tracks = int(env.get("ID_CDROM_MEDIA_TRACK_COUNT_AUDIO") or "0")
@@ -160,6 +162,14 @@ def build_command(job: Mapping[str, object], output_dir: Path) -> list[str]:
     return ["makemkvcon", "mkv", f"dev:{device}", target, str(output_dir)]
 
 
+def _parse_metadata_json(text: object) -> dict[str, object]:
+    try:
+        data = json.loads(str(text or "{}"))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def discover_makemkv_tracks(device: str) -> list[dict[str, object]]:
     try:
         completed = subprocess.run(
@@ -244,6 +254,12 @@ class JobRunner:
         job = self.store.get_job(job_id)
         if job is None:
             return
+        if (
+            str(job["disc_type"]) == "video"
+            and str(job["source"]) == VIDEO_TRACK_SCAN_SOURCE
+        ):
+            self._run_track_discovery_job(job_id, job)
+            return
         output_dir = build_output_dir(self.config.output_dir, str(job["disc_type"]), str(job["device"]), job_id)
         output_dir.mkdir(parents=True, exist_ok=True)
         command = build_command(job, output_dir)
@@ -268,6 +284,25 @@ class JobRunner:
                 self.starting.discard(str(job["device"]))
                 if process is not None:
                     self.processes.pop(str(job["device"]), None)
+
+    def _run_track_discovery_job(self, job_id: int, job: Mapping[str, object]) -> None:
+        device = str(job["device"])
+        command = ["makemkvcon", "--robot", "--messages=-stdout", "info", f"dev:{device}"]
+        self.store.mark_job_running(job_id, " ".join(command))
+        try:
+            tracks = discover_makemkv_tracks(device)
+            if not tracks:
+                raise RuntimeError("No MakeMKV titles detected for video disc")
+            drive = self.store.get_drive(device)
+            metadata = _parse_metadata_json(drive["metadata_json"] if drive is not None else job.get("metadata_json"))
+            metadata["makemkv_tracks"] = tracks
+            metadata["selected_tracks"] = [track["id"] for track in tracks if isinstance(track, dict) and "id" in track]
+            self.store.set_drive_metadata(device, json.dumps(metadata, indent=2, sort_keys=True))
+            finished = self.store.finish_job(job_id, "done")
+            self.send_webhook("completed", finished)
+        except Exception as exc:  # noqa: BLE001
+            finished = self.store.finish_job(job_id, "error", error=str(exc))
+            self.send_webhook("error", finished)
 
     def send_webhook(self, event: str, job: Mapping[str, object]) -> None:
         url = self.config.webhook_url

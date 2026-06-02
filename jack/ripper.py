@@ -270,11 +270,11 @@ class JobRunner:
             if str(job["disc_type"]) == "video" and isinstance(metadata, dict):
                     selected = metadata.get("selected_tracks")
                     if isinstance(selected, list):
+                        job = self.store.mark_job_running(job_id, f" Running makemkvcon for {len(selected)} tracks")
                         for track in selected:
                             if str(track).isdigit():
                                 job["target"] = str(track)
                                 command = build_command(job, output_dir)
-                                job = self.store.mark_job_running(job_id, " ".join(command))
                                 process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             else:
                 command = build_command(job, output_dir)

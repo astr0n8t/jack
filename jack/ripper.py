@@ -297,6 +297,9 @@ class JobRunner:
             finished = self.store.finish_job(job_id, "error", output_path=str(output_dir), error=str(exc))
             self.send_webhook("error", finished)
         finally:
+            if self.config.chown_user && self.config.chown_group:
+                chmod_cmd = ["chmod", "-R", self.config.chown_user + ":" + self.config.chown_group, str(output_dir)
+                subprocess.Popen(chmod_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             with self.lock:
                 self.starting.discard(device)
                 if process is not None:

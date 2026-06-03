@@ -299,7 +299,8 @@ class JobRunner:
         finally:
             if self.config.chown_user and self.config.chown_group:
                 chmod_cmd = ["chmod", "-R", self.config.chown_user + ":" + self.config.chown_group, str(output_dir)]
-                subprocess.Popen(chmod_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                process = subprocess.Popen(chmod_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                stdout, _ = process.communicate()
             with self.lock:
                 self.starting.discard(device)
                 if process is not None:

@@ -15,6 +15,8 @@ class Config:
     webhook_success_url: str | None
     webhook_error_url: str | None
     poll_interval: float
+    chown_user: str | None
+    chown_group: str | None
 
 
 
@@ -30,4 +32,6 @@ def load_config() -> Config:
         webhook_success_url=os.environ.get("JACK_WEBHOOK_SUCCESS_URL"),
         webhook_error_url=os.environ.get("JACK_WEBHOOK_ERROR_URL"),
         poll_interval=float(os.environ.get("JACK_POLL_INTERVAL", "2")),
+        chown_user=os.environ.get("JACK_CHOWN_USER"),
+        chown_group=os.environ.get("JACK_CHOWN_GROUP"),
     )

@@ -24,8 +24,6 @@ fd = os.open(args.device, os.O_RDONLY | os.O_NONBLOCK)
 # Get drive status via ioctl
 status = fcntl.ioctl(fd, CDROM_DRIVE_STATUS)
 
-os.system(f"echo {status} >> /tmp/drivestatus")
-
 if status == CDS_TRAY_OPEN:
     os.close(fd)
     sys.exit(0)

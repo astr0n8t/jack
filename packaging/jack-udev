@@ -17,7 +17,7 @@ CDS_DRIVE_NOT_READY = 3
 
 
 try:
-    fd = os.open(device, os.O_RDONLY | os.O_NONBLOCK)
+    fd = os.open(args.device, os.O_RDONLY | os.O_NONBLOCK)
     
     # Get drive status via ioctl
     status = fcntl.ioctl(fd, CDROM_DRIVE_STATUS)

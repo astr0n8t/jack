@@ -2,8 +2,41 @@
 import sys
 from jack.__main__ import main
 import os
+import fcntl
+import struct
+import time
 
 os.environ["JACK_STATE_DIR"] = "/var/lib/jack"
+
+# Constants from linux/cdrom.h
+CDROM_DRIVE_STATUS = 0x5326
+CDS_TRAY_OPEN      = 2
+CDS_NO_DISC        = 1
+CDS_DISC_OK        = 4
+CDS_DRIVE_NOT_READY = 3
+
+
+try:
+    fd = os.open(device, os.O_RDONLY | os.O_NONBLOCK)
+    
+    # Get drive status via ioctl
+    status = fcntl.ioctl(fd, CDROM_DRIVE_STATUS)
+    os.close(fd)
+    
+    if status == CDS_TRAY_OPEN:
+        sys.exit(0)
+    elif status == CDS_NO_DISC:
+        sys.exit(0)
+    elif status == CDS_DRIVE_NOT_READY:
+        retries = 0
+        while fcntl.ioctl(fd, CDROM_DRIVE_STATUS) != CDS_DISC_OK:
+            time.sleep(10)
+            retries += 1
+            if retries > 20:
+                sys.exit(1)
+        
+except Exception as e:
+    return f"error: {e}"
 
 if __name__ == "__main__":
     raise SystemExit(main())

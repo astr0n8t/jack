@@ -35,9 +35,8 @@ elif status == CDS_DRIVE_NOT_READY:
     while fcntl.ioctl(fd, CDROM_DRIVE_STATUS) != CDS_DISC_OK:
         time.sleep(10)
         retries += 1
-        if retries > 20:
-            os.close(fd)
-            sys.exit(1)
+        if retries > 6:
+            break # still try to queue disc
 
 os.close(fd)
 

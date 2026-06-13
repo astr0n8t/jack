@@ -233,6 +233,8 @@ class JobRunner:
         return subprocess.run(["eject", device], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
     def dispatch(self) -> None:
+        if self.store.get_setting("auto_rip_enabled", "true") == "false":
+            return
         for job in self.store.claim_queued_jobs():
             device = str(job["device"])
             if self.is_busy(device):

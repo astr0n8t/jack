@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     started_at TEXT,
     finished_at TEXT
 );
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 
@@ -212,12 +216,19 @@ class StateStore:
                 "SELECT * FROM drives ORDER BY device ASC"
             ).fetchall()
 
-    def list_jobs(self, limit: int = 50) -> list[sqlite3.Row]:
+    def get_setting(self, key: str, default: str) -> str:
         with self.connect() as conn:
-            return conn.execute(
-                "SELECT * FROM jobs ORDER BY id DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+            if row:
+                return row["value"]
+            return default
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
 
     def restart_job(self, job_id: int) -> int:
         job = self.get_job(job_id)

@@ -26,6 +26,8 @@ button.secondary { background: #334155; }
 .badge.queued { background: #a16207; }
 .badge.idle, .badge.done { background: #166534; }
 .badge.error { background: #b91c1c; }
+.badge.enabled { background: #166534; }
+.badge.disabled { background: #b91c1c; }
 small { color: #94a3b8; }
 form.inline { display: inline; }
 table { width: 100%; border-collapse: collapse; }
@@ -45,6 +47,25 @@ def render_page(store: StateStore, message: str = "") -> bytes:
     drives = store.list_drives()
     jobs = store.list_jobs()
     cards: list[str] = []
+
+    auto_rip_enabled = store.get_setting("auto_rip_enabled", "true") == "true"
+    auto_rip_status_label = "Enabled" if auto_rip_enabled else "Disabled"
+    auto_rip_class = "enabled" if auto_rip_enabled else "disabled"
+
+    cards.insert(0, f"""
+            <section class='card'>
+              <h2>Settings</h2>
+              <p>
+                <span class='badge {auto_rip_class}'>{auto_rip_status_label}</span>
+                Auto-rip jobs from queue
+              </p>
+              <form method='post' class='inline'>
+                <input type='hidden' name='action' value='toggle-auto-rip'>
+                <button type='submit' class='secondary'>Toggle Auto-rip</button>
+              </form>
+            </section>
+            """)
+
     for drive in drives:
         latest = store.latest_job_for_drive(str(drive["device"]))
         metadata_data = _safe_metadata(str(drive["metadata_json"]))
@@ -67,12 +88,14 @@ def render_page(store: StateStore, message: str = "") -> bytes:
                 checked = "checked" if track_id in selected_tracks else ""
                 rows.append(
                     "<tr>"
-                    f"<td><input type='checkbox' name='track' value='{html.escape(track_id)}' {checked}></td>"
+                    f"<td><input type='checkbox' name='track' value='{html.escape(track_id)}' {
+                        checked}></td>"
                     f"<td>{html.escape(str(track.get('id', '')))}</td>"
                     f"<td>{html.escape(str(track.get('name', '')))}</td>"
                     f"<td>{html.escape(str(track.get('duration', '')))}</td>"
                     f"<td>{html.escape(str(track.get('chapters', '')))}</td>"
-                    f"<td>{html.escape(str(track.get('filesize_bytes', '')))}</td>"
+                    f"<td>{html.escape(
+                        str(track.get('filesize_bytes', '')))}</td>"
                     "</tr>"
                 )
             if rows:
@@ -123,7 +146,8 @@ def render_page(store: StateStore, message: str = "") -> bytes:
             """
         )
     rows = "".join(
-        f"<tr><td>{job['id']}</td><td>{html.escape(str(job['device']))}</td><td>{html.escape(str(job['disc_type']))}</td><td>{html.escape(str(job['status']))}</td><td>{html.escape(str(job['error'] or ''))}</td><td>{html.escape(str(job['output_path'] or ''))}</td></tr>"
+        f"<tr><td>{job['id']}</td><td>{html.escape(str(job['device']))}</td><td>{html.escape(str(job['disc_type']))}</td><td>{html.escape(
+            str(job['status']))}</td><td>{html.escape(str(job['error'] or ''))}</td><td>{html.escape(str(job['output_path'] or ''))}</td></tr>"
         for job in jobs
     )
     body = f"""
@@ -180,12 +204,20 @@ class JackHandler(BaseHTTPRequestHandler):
             if action == "eject":
                 self.runner.eject(device)
                 message = f"Ejected {device}"
+            elif action == "toggle-auto-rip":
+                current = self.store.get_setting("auto_rip_enabled", "true")
+                new_val = "false" if current == "true" else "true"
+                self.store.set_setting("auto_rip_enabled", new_val)
+                message = f"Auto-rip is now {'Enabled' if new_val ==
+                                             'true' else 'Disabled'}"
             elif action == "restart":
                 job_id = self.runner.restart_drive(device)
-                message = f"Queued restart for {device} as job {job_id}" if job_id else f"No prior job found for {device}"
+                message = f"Queued restart for {device} as job {
+                    job_id}" if job_id else f"No prior job found for {device}"
             elif action == "save-metadata":
                 metadata_text = params.get("metadata", ["{}"])[0]
-                parsed = json.dumps(parse_metadata(metadata_text), indent=2, sort_keys=True)
+                parsed = json.dumps(parse_metadata(
+                    metadata_text), indent=2, sort_keys=True)
                 self.store.set_drive_metadata(device, parsed)
                 message = f"Saved metadata for {device}"
             elif action == "queue-selected-tracks":
@@ -198,16 +230,20 @@ class JackHandler(BaseHTTPRequestHandler):
                     for track in metadata.get("makemkv_tracks", [])
                     if isinstance(track, dict) and str(track.get("id", "")).isdigit()
                 }
-                selected = [track_id for track_id in params.get("track", []) if track_id in available]
+                selected = [track_id for track_id in params.get(
+                    "track", []) if track_id in available]
                 if not selected:
                     raise ValueError("Select at least one track")
-                metadata["selected_tracks"] = [int(track_id) for track_id in selected]
+                metadata["selected_tracks"] = [
+                    int(track_id) for track_id in selected]
                 metadata_json = json.dumps(metadata, indent=2, sort_keys=True)
                 self.store.set_drive_metadata(device, metadata_json)
                 latest = self.store.latest_job_for_drive(device)
                 if latest is None or latest["status"] not in ("queued", "running"):
-                    job_id = self.store.enqueue_job(device, str(drive["disc_type"]), metadata_json=metadata_json, source="web", force=True)
-                    message = f"Queued selected tracks for {device} as job {job_id}"
+                    job_id = self.store.enqueue_job(device, str(
+                        drive["disc_type"]), metadata_json=metadata_json, source="web", force=True)
+                    message = f"Queued selected tracks for {
+                        device} as job {job_id}"
                 else:
                     message = f"Updated selected tracks for {device}"
             else:

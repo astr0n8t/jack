@@ -79,7 +79,8 @@ class StateStore:
             for row in rows:
                 conn.execute(
                     "UPDATE drives SET status='idle', active_job_id=NULL, last_error=?, updated_at=? WHERE device=?",
-                    ("Service restarted while job was active", now, row["device"]),
+                    ("Service restarted while job was active",
+                     now, row["device"]),
                 )
 
     def upsert_drive(
@@ -98,10 +99,14 @@ class StateStore:
                 "SELECT metadata_json, status, last_error, active_job_id FROM drives WHERE device=?",
                 (device,),
             ).fetchone()
-            metadata_json = metadata_json if metadata_json is not None else (row["metadata_json"] if row else "{}")
-            status = status if status is not None else (row["status"] if row else "idle")
-            last_error = last_error if last_error is not None else (row["last_error"] if row else None)
-            active_job_id = active_job_id if active_job_id is not None else (row["active_job_id"] if row else None)
+            metadata_json = metadata_json if metadata_json is not None else (
+                row["metadata_json"] if row else "{}")
+            status = status if status is not None else (
+                row["status"] if row else "idle")
+            last_error = last_error if last_error is not None else (
+                row["last_error"] if row else None)
+            active_job_id = active_job_id if active_job_id is not None else (
+                row["active_job_id"] if row else None)
             conn.execute(
                 """
                 INSERT INTO drives(device, disc_type, status, metadata_json, last_error, last_seen, active_job_id, updated_at)
@@ -115,7 +120,8 @@ class StateStore:
                     active_job_id=excluded.active_job_id,
                     updated_at=excluded.updated_at
                 """,
-                (device, disc_type, status, metadata_json, last_error, now, active_job_id, now),
+                (device, disc_type, status, metadata_json,
+                 last_error, now, active_job_id, now),
             )
 
     def set_drive_metadata(self, device: str, metadata_json: str) -> None:
@@ -167,7 +173,8 @@ class StateStore:
                 "UPDATE jobs SET status='running', command=?, started_at=?, updated_at=? WHERE id=?",
                 (command, now, now, job_id),
             )
-            job = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            job = conn.execute(
+                "SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             conn.execute(
                 "UPDATE drives SET status='running', active_job_id=?, last_error=NULL, updated_at=? WHERE device=?",
                 (job_id, now, job["device"]),
@@ -181,7 +188,8 @@ class StateStore:
                 "UPDATE jobs SET status=?, output_path=COALESCE(?, output_path), error=?, finished_at=?, updated_at=? WHERE id=?",
                 (status, output_path, error, now, now, job_id),
             )
-            job = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            job = conn.execute(
+                "SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             drive_status = "idle" if status == "done" else "error"
             conn.execute(
                 "UPDATE drives SET status=?, active_job_id=NULL, last_error=?, updated_at=? WHERE device=?",
@@ -216,9 +224,17 @@ class StateStore:
                 "SELECT * FROM drives ORDER BY device ASC"
             ).fetchall()
 
+    def list_jobs(self, limit: int = 50) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            return conn.execute(
+                "SELECT * FROM jobs ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+
     def get_setting(self, key: str, default: str) -> str:
         with self.connect() as conn:
-            row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key=?", (key,)).fetchone()
             if row:
                 return row["value"]
             return default

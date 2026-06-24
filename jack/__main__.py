@@ -11,7 +11,6 @@ from .store import StateStore
 from .web import serve
 
 
-
 def command_serve(_args: argparse.Namespace) -> int:
     config = load_config()
     config.state_dir.mkdir(parents=True, exist_ok=True)
@@ -23,25 +22,28 @@ def command_serve(_args: argparse.Namespace) -> int:
     return 0
 
 
-
 def command_udev(args: argparse.Namespace) -> int:
     config = load_config()
     store = StateStore(config.state_dir / "jack.db")
+    if store.get_setting("auto_rip_enabled", "true") == "false":
+        return
     disc_type = args.disc_type or classify_disc(os.environ)
     device = args.device
     metadata: dict[str, object] = {}
     if disc_type == "video":
         metadata.update(identify_video_metadata(device, os.environ))
     metadata_json = json.dumps(metadata, indent=2, sort_keys=True)
-    store.upsert_drive(device, disc_type, status="idle", metadata_json=metadata_json)
+    store.upsert_drive(device, disc_type, status="idle",
+                       metadata_json=metadata_json)
     if disc_type == "video":
-        job_id = store.enqueue_job(device, disc_type, metadata_json=metadata_json, source=VIDEO_TRACK_SCAN_SOURCE)
+        job_id = store.enqueue_job(
+            device, disc_type, metadata_json=metadata_json, source=VIDEO_TRACK_SCAN_SOURCE)
         print(job_id)
         return 0
-    job_id = store.enqueue_job(device, disc_type, metadata_json=metadata_json, source="udev")
+    job_id = store.enqueue_job(
+        device, disc_type, metadata_json=metadata_json, source="udev")
     print(job_id)
     return 0
-
 
 
 def command_scan(args: argparse.Namespace) -> int:
@@ -56,11 +58,12 @@ def command_scan(args: argparse.Namespace) -> int:
         print("Invalid metadata JSON: must be a JSON object", file=sys.stderr)
         return 1
     metadata_json = json.dumps(parsed, indent=2, sort_keys=True)
-    store.upsert_drive(args.device, args.disc_type, status="idle", metadata_json=metadata_json)
-    job_id = store.enqueue_job(args.device, args.disc_type, metadata_json=metadata_json, source="manual", force=True)
+    store.upsert_drive(args.device, args.disc_type,
+                       status="idle", metadata_json=metadata_json)
+    job_id = store.enqueue_job(args.device, args.disc_type,
+                               metadata_json=metadata_json, source="manual", force=True)
     print(job_id)
     return 0
-
 
 
 def command_container(_args: argparse.Namespace) -> int:
@@ -70,29 +73,31 @@ def command_container(_args: argparse.Namespace) -> int:
     return 0
 
 
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jack")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    serve_parser = subparsers.add_parser("serve", help="Run the web UI and job dispatcher")
+    serve_parser = subparsers.add_parser(
+        "serve", help="Run the web UI and job dispatcher")
     serve_parser.set_defaults(func=command_serve)
 
-    udev_parser = subparsers.add_parser("udev-event", help="Queue a job from a udev rule")
+    udev_parser = subparsers.add_parser(
+        "udev-event", help="Queue a job from a udev rule")
     udev_parser.add_argument("--device", required=True)
     udev_parser.add_argument("--disc-type", choices=["audio", "video"])
     udev_parser.set_defaults(func=command_udev)
 
     scan_parser = subparsers.add_parser("scan", help="Queue a manual job")
     scan_parser.add_argument("--device", required=True)
-    scan_parser.add_argument("--disc-type", required=True, choices=["audio", "video"])
+    scan_parser.add_argument(
+        "--disc-type", required=True, choices=["audio", "video"])
     scan_parser.add_argument("--metadata")
     scan_parser.set_defaults(func=command_scan)
 
-    container_parser = subparsers.add_parser("container", help="Start udev and then run the web service")
+    container_parser = subparsers.add_parser(
+        "container", help="Start udev and then run the web service")
     container_parser.set_defaults(func=command_container)
     return parser
-
 
 
 def main() -> int:

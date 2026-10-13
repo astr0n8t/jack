@@ -28,7 +28,8 @@ def classify_disc(env: Mapping[str, str]) -> str:
 
 def _run(command: list[str]) -> str | None:
     try:
-        completed = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        completed = subprocess.run(
+            command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
     return completed.stdout
@@ -53,7 +54,8 @@ def find_mountpoint(device: str) -> Path | None:
 
 
 def _clean_video_title(title: str) -> str:
-    value = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode().strip()
+    value = unicodedata.normalize("NFKD", title).encode(
+        "ascii", "ignore").decode().strip()
     for fragment in (" - Blu-rayTM", " Blu-rayTM", " - BLU-RAYTM", " - BLU-RAY", " - Blu-ray"):
         value = value.replace(fragment, "")
     return " ".join(value.split())
@@ -148,11 +150,12 @@ def build_command(job: Mapping[str, object], output_dir: Path, chapter: str = ""
             str(output_dir),
             "--cover-art",
             "complete",
+            "--keep-going"
         ]
     target = "all"
     if chapter:
         target = chapter
-        
+
     return ["makemkvcon", "--robot", "--messages=-stdout", "mkv", f"dev:{device}", target, str(output_dir)]
 
 
@@ -167,7 +170,8 @@ def _parse_metadata_json(text: object) -> dict[str, object]:
 def discover_makemkv_tracks(device: str) -> list[dict[str, object]]:
     try:
         completed = subprocess.run(
-            ["makemkvcon", "--robot", "--messages=-stdout", "info", f"dev:{device}"],
+            ["makemkvcon", "--robot", "--messages=-stdout",
+                "info", f"dev:{device}"],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -179,7 +183,8 @@ def discover_makemkv_tracks(device: str) -> list[dict[str, object]]:
     for line in completed.stdout.splitlines():
         if not line.startswith("TINFO:"):
             continue
-        fields = list(reader([line.removeprefix("TINFO:")], skipinitialspace=False))[0]
+        fields = list(
+            reader([line.removeprefix("TINFO:")], skipinitialspace=False))[0]
         if len(fields) < 4:
             continue
         try:
@@ -188,7 +193,8 @@ def discover_makemkv_tracks(device: str) -> list[dict[str, object]]:
         except ValueError:
             continue
         value = fields[3].strip()
-        track = by_title.setdefault(title_id, {"id": title_id, "name": f"Title {title_id}"})
+        track = by_title.setdefault(
+            title_id, {"id": title_id, "name": f"Title {title_id}"})
         if info_id == 27 and value:
             track["name"] = value
         elif info_id == 9 and value:
@@ -243,7 +249,8 @@ class JobRunner:
                 if device in self.processes or device in self.starting:
                     continue
                 self.starting.add(device)
-            thread = threading.Thread(target=self._run_job, args=(int(job["id"]),), daemon=True)
+            thread = threading.Thread(
+                target=self._run_job, args=(int(job["id"]),), daemon=True)
             thread.start()
 
     def _run_job(self, job_id: int) -> None:
@@ -260,48 +267,60 @@ class JobRunner:
                 self._run_track_discovery_job(job_id, job)
                 return
             try:
-                metadata_json = job["metadata_json"] if "metadata_json" in job.keys() else "{}"
+                metadata_json = job["metadata_json"] if "metadata_json" in job.keys(
+                ) else "{}"
                 metadata = json.loads(str(metadata_json or "{}"))
             except json.JSONDecodeError:
                 metadata = {}
             title = "UNKNOWN " + str(job_id)
             if isinstance(metadata, dict) and 'title' in metadata:
-                title = metadata['title']              
-            output_dir = build_output_dir(self.config.output_dir, str(job["disc_type"]), title)
+                title = metadata['title']
+            output_dir = build_output_dir(
+                self.config.output_dir, str(job["disc_type"]), title)
             output_dir.mkdir(parents=True, exist_ok=True)
             if str(job["disc_type"]) == "video" and isinstance(metadata, dict):
-                    selected = metadata.get("selected_tracks")
-                    if isinstance(selected, list):
-                        job = self.store.mark_job_running(job_id, f" Running makemkvcon for {len(selected)} tracks")
-                        for track in selected:
-                            if str(track).isdigit():
-                                command = build_command(job, output_dir, str(track))
-                                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                                with self.lock:
-                                    self.starting.discard(device)
-                                    self.processes[device] = (job_id, process)
-                                stdout, _ = process.communicate()
-                                if process.returncode != 0:
-                                    raise RuntimeError(stdout.strip() or f"Command failed with exit code {process.returncode}")
+                selected = metadata.get("selected_tracks")
+                if isinstance(selected, list):
+                    job = self.store.mark_job_running(
+                        job_id, f" Running makemkvcon for {len(selected)} tracks")
+                    for track in selected:
+                        if str(track).isdigit():
+                            command = build_command(
+                                job, output_dir, str(track))
+                            process = subprocess.Popen(
+                                command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                            with self.lock:
+                                self.starting.discard(device)
+                                self.processes[device] = (job_id, process)
+                            stdout, _ = process.communicate()
+                            if process.returncode != 0:
+                                raise RuntimeError(stdout.strip() or f"Command failed with exit code {
+                                                   process.returncode}")
             else:
                 command = build_command(job, output_dir)
                 job = self.store.mark_job_running(job_id, " ".join(command))
-                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                process = subprocess.Popen(
+                    command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                 with self.lock:
                     self.starting.discard(device)
                     self.processes[device] = (job_id, process)
                 stdout, _ = process.communicate()
                 if process.returncode != 0:
-                    raise RuntimeError(stdout.strip() or f"Command failed with exit code {process.returncode}")
-            finished = self.store.finish_job(job_id, "done", output_path=str(output_dir))
+                    raise RuntimeError(stdout.strip() or f"Command failed with exit code {
+                                       process.returncode}")
+            finished = self.store.finish_job(
+                job_id, "done", output_path=str(output_dir))
             self.send_webhook("completed", finished)
         except Exception as exc:  # noqa: BLE001
-            finished = self.store.finish_job(job_id, "error", output_path=str(output_dir), error=str(exc))
+            finished = self.store.finish_job(
+                job_id, "error", output_path=str(output_dir), error=str(exc))
             self.send_webhook("error", finished)
         finally:
             if self.config.chown_user and self.config.chown_group:
-                chmod_cmd = ["chown", "-R", self.config.chown_user + ":" + self.config.chown_group, str(output_dir)]
-                process = subprocess.Popen(chmod_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                chmod_cmd = ["chown", "-R", self.config.chown_user +
+                             ":" + self.config.chown_group, str(output_dir)]
+                process = subprocess.Popen(
+                    chmod_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                 stdout, _ = process.communicate()
             with self.lock:
                 self.starting.discard(device)
@@ -310,17 +329,21 @@ class JobRunner:
 
     def _run_track_discovery_job(self, job_id: int, job: Mapping[str, object]) -> None:
         device = str(job["device"])
-        command = ["makemkvcon", "--robot", "--messages=-stdout", "info", f"dev:{device}"]
+        command = ["makemkvcon", "--robot",
+                   "--messages=-stdout", "info", f"dev:{device}"]
         self.store.mark_job_running(job_id, " ".join(command))
         try:
             tracks = discover_makemkv_tracks(device)
             if not tracks:
                 raise RuntimeError("No MakeMKV titles detected for video disc")
             drive = self.store.get_drive(device)
-            metadata = _parse_metadata_json(drive["metadata_json"] if drive is not None else job.get("metadata_json"))
+            metadata = _parse_metadata_json(
+                drive["metadata_json"] if drive is not None else job.get("metadata_json"))
             metadata["makemkv_tracks"] = tracks
-            metadata["selected_tracks"] = [track["id"] for track in tracks if isinstance(track, dict) and "id" in track]
-            self.store.set_drive_metadata(device, json.dumps(metadata, indent=2, sort_keys=True))
+            metadata["selected_tracks"] = [track["id"]
+                                           for track in tracks if isinstance(track, dict) and "id" in track]
+            self.store.set_drive_metadata(
+                device, json.dumps(metadata, indent=2, sort_keys=True))
             finished = self.store.finish_job(job_id, "done")
             self.send_webhook("completed", finished)
         except Exception as exc:  # noqa: BLE001
@@ -336,7 +359,8 @@ class JobRunner:
         if not url:
             return
         payload = json.dumps({"event": event, "job": dict(job)}).encode()
-        req = request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+        req = request.Request(url, data=payload, headers={
+                              "Content-Type": "application/json"}, method="POST")
         try:
             request.urlopen(req, timeout=10).read()
         except Exception:

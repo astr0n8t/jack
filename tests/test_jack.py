@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from jack import __main__
@@ -147,6 +148,44 @@ class RunnerTests(unittest.TestCase):
             with mock.patch("jack.ripper.discover_makemkv_tracks", return_value=[{"id": 0, "name": "Main"}]):
                 runner._run_job(job_id)
             self.assertNotIn("/dev/sr0", runner.starting)
+
+    def test_send_webhook_logs_when_url_missing(self) -> None:
+        runner = JobRunner(
+            SimpleNamespace(
+                webhook_url=None,
+                webhook_success_url=None,
+                webhook_error_url=None,
+            ),
+            mock.Mock(),
+        )
+        with self.assertLogs("jack.ripper", level="INFO") as logs:
+            runner.send_webhook("completed", {"id": 42})
+        self.assertIn(
+            "Skipping webhook: no URL configured for event=completed job_id=42",
+            logs.output[0],
+        )
+
+    def test_send_webhook_logs_failure_details(self) -> None:
+        runner = JobRunner(
+            SimpleNamespace(
+                webhook_url="https://example.invalid/default",
+                webhook_success_url="https://example.invalid/success",
+                webhook_error_url="https://example.invalid/error",
+            ),
+            mock.Mock(),
+        )
+        with mock.patch("jack.ripper.request.urlopen", side_effect=RuntimeError("boom")):
+            with self.assertLogs("jack.ripper", level="INFO") as logs:
+                runner.send_webhook("completed", {"id": 7})
+        log_text = "\n".join(logs.output)
+        self.assertIn(
+            "Sending webhook event=completed job_id=7 url=https://example.invalid/success",
+            log_text,
+        )
+        self.assertIn(
+            "Webhook failed event=completed job_id=7 url=https://example.invalid/success",
+            log_text,
+        )
 
 
 class CommandTests(unittest.TestCase):

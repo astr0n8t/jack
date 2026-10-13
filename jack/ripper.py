@@ -362,13 +362,13 @@ class JobRunner:
             LOGGER.info(
                 "Skipping webhook: no URL configured for event=%s job_id=%s",
                 event,
-                job.get("id"),
+                job,
             )
             return
         LOGGER.info(
             "Sending webhook event=%s job_id=%s url=%s",
             event,
-            job.get("id"),
+            job,
             url,
         )
         payload = json.dumps({"event": event, "job": dict(job)}).encode()
@@ -379,14 +379,14 @@ class JobRunner:
             LOGGER.info(
                 "Webhook sent event=%s job_id=%s url=%s",
                 event,
-                job.get("id"),
+                job,
                 url,
             )
         except Exception:
             LOGGER.exception(
                 "Webhook failed event=%s job_id=%s url=%s",
                 event,
-                job.get("id"),
+                job,
                 url,
             )
             return

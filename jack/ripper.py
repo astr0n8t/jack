@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import logging
 import subprocess
 import tempfile
 import threading
@@ -17,6 +18,7 @@ from .config import Config
 from .store import StateStore
 
 VIDEO_TRACK_SCAN_SOURCE = "video-track-scan"
+LOGGER = logging.getLogger(__name__)
 
 
 def classify_disc(env: Mapping[str, str]) -> str:
@@ -357,11 +359,34 @@ class JobRunner:
         elif event == "error":
             url = self.config.webhook_error_url or url
         if not url:
+            LOGGER.info(
+                "Skipping webhook: no URL configured for event=%s job_id=%s",
+                event,
+                job.get("id"),
+            )
             return
+        LOGGER.info(
+            "Sending webhook event=%s job_id=%s url=%s",
+            event,
+            job.get("id"),
+            url,
+        )
         payload = json.dumps({"event": event, "job": dict(job)}).encode()
         req = request.Request(url, data=payload, headers={
                               "Content-Type": "application/json"}, method="POST")
         try:
             request.urlopen(req, timeout=10).read()
+            LOGGER.info(
+                "Webhook sent event=%s job_id=%s url=%s",
+                event,
+                job.get("id"),
+                url,
+            )
         except Exception:
+            LOGGER.exception(
+                "Webhook failed event=%s job_id=%s url=%s",
+                event,
+                job.get("id"),
+                url,
+            )
             return

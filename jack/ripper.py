@@ -372,8 +372,17 @@ class JobRunner:
             url,
         )
         payload = json.dumps({"event": event, "job": dict(job)}).encode()
-        req = request.Request(url, data=payload, headers={
-                              "Content-Type": "application/json"}, method="POST")
+        headers = {"Content-Type": "application/json"}
+        webhook_header = str(getattr(self.config, "webhook_header", "") or "").strip()
+        if webhook_header:
+            name, separator, value = webhook_header.partition(":")
+            if separator and name.strip() and value.strip():
+                headers[name.strip()] = value.strip()
+            else:
+                LOGGER.warning(
+                    "Ignoring JACK_WEBHOOK_HEADER because it is not in 'Header-Name: value' format",
+                )
+        req = request.Request(url, data=payload, headers=headers, method="POST")
         try:
             request.urlopen(req, timeout=10).read()
             LOGGER.info(

@@ -43,3 +43,4 @@ Set any of the following environment variables:
 - `JACK_WEBHOOK_URL`
 - `JACK_WEBHOOK_SUCCESS_URL`
 - `JACK_WEBHOOK_ERROR_URL`
+- `JACK_WEBHOOK_HEADER` (optional, format: `Header-Name: value`)

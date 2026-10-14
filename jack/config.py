@@ -17,6 +17,7 @@ class Config:
     poll_interval: float
     chown_user: str | None
     chown_group: str | None
+    webhook_header: str | None = None
 
 
 
@@ -34,4 +35,5 @@ def load_config() -> Config:
         poll_interval=float(os.environ.get("JACK_POLL_INTERVAL", "2")),
         chown_user=os.environ.get("JACK_CHOWN_USER"),
         chown_group=os.environ.get("JACK_CHOWN_GROUP"),
+        webhook_header=os.environ.get("JACK_WEBHOOK_HEADER"),
     )

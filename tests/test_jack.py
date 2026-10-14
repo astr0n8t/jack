@@ -187,6 +187,23 @@ class RunnerTests(unittest.TestCase):
             log_text,
         )
 
+    def test_send_webhook_adds_configured_header(self) -> None:
+        runner = JobRunner(
+            SimpleNamespace(
+                webhook_url="https://example.invalid/default",
+                webhook_success_url=None,
+                webhook_error_url=None,
+                webhook_header="Authorization: ******",
+            ),
+            mock.Mock(),
+        )
+        response = mock.Mock()
+        response.read.return_value = b""
+        with mock.patch("jack.ripper.request.urlopen", return_value=response) as urlopen:
+            runner.send_webhook("completed", {"id": 1})
+        req = urlopen.call_args.args[0]
+        self.assertEqual(req.get_header("Authorization"), "******")
+
 
 class CommandTests(unittest.TestCase):
     def test_audio_command_uses_whipper(self) -> None:

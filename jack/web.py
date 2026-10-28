@@ -14,11 +14,13 @@ from .store import StateStore, parse_metadata
 STYLE = """
 body { font-family: Inter, system-ui, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
 a { color: #93c5fd; }
-main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
-.grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-.card { background: #111827; border: 1px solid #1f2937; border-radius: 16px; padding: 1rem 1.25rem; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+main { max-width: 1100px; margin: 0 auto; padding: 2rem; box-sizing: border-box; }
+h1, h2, h3, p, label { overflow-wrap: anywhere; }
+.grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); margin-bottom: 1rem; }
+.card { background: #111827; border: 1px solid #1f2937; border-radius: 16px; padding: 1rem 1.25rem; box-shadow: 0 10px 30px rgba(0,0,0,.18); min-width: 0; overflow: hidden; }
 pre, textarea { width: 100%; background: #020617; color: #cbd5e1; border: 1px solid #334155; border-radius: 10px; padding: .75rem; box-sizing: border-box; }
-textarea { min-height: 8rem; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20rem; overflow-y: auto; }
+textarea { min-height: 8rem; resize: vertical; font-family: ui-monospace, monospace; }
 button { background: #2563eb; color: white; border: none; border-radius: 999px; padding: .6rem 1rem; margin: .25rem .4rem .25rem 0; cursor: pointer; }
 button.secondary { background: #334155; }
 .badge { display: inline-block; border-radius: 999px; padding: .2rem .65rem; font-size: .85rem; text-transform: capitalize; }
@@ -30,8 +32,12 @@ button.secondary { background: #334155; }
 .badge.disabled { background: #b91c1c; }
 small { color: #94a3b8; }
 form.inline { display: inline; }
+.table-wrap { width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: .4rem; border-bottom: 1px solid #1f2937; }
+th, td { text-align: left; padding: .4rem; border-bottom: 1px solid #1f2937; vertical-align: top; white-space: nowrap; }
+td.long { white-space: normal; overflow-wrap: anywhere; min-width: 10rem; max-width: 32rem; }
+td.long div { max-height: 8rem; overflow-y: auto; white-space: pre-wrap; }
+@media (max-width: 600px) { main { padding: 1rem; } }
 """
 
 
@@ -91,7 +97,7 @@ def render_page(store: StateStore, message: str = "") -> bytes:
                     f"<td><input type='checkbox' name='track' value='{html.escape(track_id)}' {
                         checked}></td>"
                     f"<td>{html.escape(str(track.get('id', '')))}</td>"
-                    f"<td>{html.escape(str(track.get('name', '')))}</td>"
+                    f"<td class='long'>{html.escape(str(track.get('name', '')))}</td>"
                     f"<td>{html.escape(str(track.get('duration', '')))}</td>"
                     f"<td>{html.escape(str(track.get('chapters', '')))}</td>"
                     f"<td>{html.escape(
@@ -104,10 +110,10 @@ def render_page(store: StateStore, message: str = "") -> bytes:
                   <input type='hidden' name='action' value='queue-selected-tracks'>
                   <input type='hidden' name='device' value='{html.escape(str(drive['device']))}'>
                   <h3>MakeMKV titles</h3>
-                  <table>
+                  <div class='table-wrap'><table>
                     <thead><tr><th>Rip</th><th>ID</th><th>Name</th><th>Duration</th><th>Chapters</th><th>Bytes</th></tr></thead>
                     <tbody>{''.join(rows)}</tbody>
-                  </table>
+                  </table></div>
                   <div>
                     <button type='submit'>Rip selected tracks</button>
                   </div>
@@ -120,7 +126,7 @@ def render_page(store: StateStore, message: str = "") -> bytes:
               <p><span class='badge {html.escape(str(drive['status']))}'>{html.escape(str(drive['status']))}</span>
               <span class='badge {html.escape(str(drive['disc_type']))}'>{html.escape(str(drive['disc_type']))}</span></p>
               <p><small>Last seen {html.escape(str(drive['last_seen']))}</small></p>
-              <p>{html.escape(str(drive['last_error'] or 'No errors recorded.'))}</p>
+              <pre>{html.escape(str(drive['last_error'] or 'No errors recorded.'))}</pre>
               {tracks_markup}
               <form method='post'>
                 <input type='hidden' name='action' value='save-metadata'>
@@ -147,7 +153,7 @@ def render_page(store: StateStore, message: str = "") -> bytes:
         )
     rows = "".join(
         f"<tr><td>{job['id']}</td><td>{html.escape(str(job['device']))}</td><td>{html.escape(str(job['disc_type']))}</td><td>{html.escape(
-            str(job['status']))}</td><td>{html.escape(str(job['error'] or ''))}</td><td>{html.escape(str(job['output_path'] or ''))}</td></tr>"
+            str(job['status']))}</td><td class='long'><div>{html.escape(str(job['error'] or ''))}</div></td><td class='long'>{html.escape(str(job['output_path'] or ''))}</td></tr>"
         for job in jobs
     )
     body = f"""
@@ -155,6 +161,7 @@ def render_page(store: StateStore, message: str = "") -> bytes:
     <html lang='en'>
       <head>
         <meta charset='utf-8'>
+        <meta name='viewport' content='width=device-width, initial-scale=1'>
         <title>jack</title>
         <meta http-equiv='refresh' content='10'>
         <style>{STYLE}</style>
@@ -167,10 +174,10 @@ def render_page(store: StateStore, message: str = "") -> bytes:
           <div class='grid'>{''.join(cards) or "<section class='card'><p>No drives have reported media yet.</p></section>"}</div>
           <section class='card'>
             <h2>Recent jobs</h2>
-            <table>
+            <div class='table-wrap'><table>
               <thead><tr><th>ID</th><th>Drive</th><th>Type</th><th>Status</th><th>Error</th><th>Output</th></tr></thead>
               <tbody>{rows}</tbody>
-            </table>
+            </table></div>
           </section>
         </main>
       </body>

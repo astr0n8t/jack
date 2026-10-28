@@ -149,6 +149,138 @@ class RunnerTests(unittest.TestCase):
                 runner._run_job(job_id)
             self.assertNotIn("/dev/sr0", runner.starting)
 
+    def _runner(self, base: Path, store: StateStore, **overrides: object) -> JobRunner:
+        config = dict(
+            state_dir=base,
+            output_dir=base / "output",
+            host="127.0.0.1",
+            port=8080,
+            webhook_url=None,
+            webhook_success_url=None,
+            webhook_error_url=None,
+            poll_interval=0.1,
+        )
+        config.update(overrides)
+        return JobRunner(Config(**config), store)
+
+    def test_track_scan_with_chown_clears_starting_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            store = StateStore(base / "jack.db")
+            store.upsert_drive("/dev/sr0", "video", metadata_json="{}")
+            job_id = store.enqueue_job("/dev/sr0", "video", source=VIDEO_TRACK_SCAN_SOURCE)
+            runner = self._runner(base, store, chown_user="u", chown_group="g")
+            runner.starting.add("/dev/sr0")
+            with mock.patch("jack.ripper.discover_makemkv_tracks", return_value=[{"id": 0}]):
+                runner._run_job(job_id)
+            self.assertNotIn("/dev/sr0", runner.starting)
+            self.assertEqual(store.get_job(job_id)["status"], "done")
+
+    def test_restart_supersedes_queued_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(Path(tmp) / "jack.db")
+            store.upsert_drive("/dev/sr0", "audio")
+            first = store.enqueue_job("/dev/sr0", "audio")
+            restarted = store.restart_job(first)
+            self.assertEqual(store.get_job(first)["status"], "error")
+            self.assertEqual(store.get_job(restarted)["status"], "queued")
+            self.assertEqual(store.get_job(restarted)["source"], "restart")
+
+    def test_restart_of_track_scan_rescans(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(Path(tmp) / "jack.db")
+            store.upsert_drive("/dev/sr0", "video")
+            first = store.enqueue_job("/dev/sr0", "video", source=VIDEO_TRACK_SCAN_SOURCE)
+            store.finish_job(first, "error", error="boom")
+            restarted = store.restart_job(first)
+            self.assertEqual(store.get_job(restarted)["source"], VIDEO_TRACK_SCAN_SOURCE)
+
+    def test_old_job_finishing_does_not_clobber_new_job_drive_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(Path(tmp) / "jack.db")
+            store.upsert_drive("/dev/sr0", "audio")
+            old = store.enqueue_job("/dev/sr0", "audio")
+            store.mark_job_running(old, "whipper")
+            new = store.enqueue_job("/dev/sr0", "audio", force=True)
+            store.finish_job(old, "error", error="killed")
+            drive = store.get_drive("/dev/sr0")
+            self.assertEqual(drive["status"], "queued")
+            self.assertEqual(drive["active_job_id"], new)
+
+    def test_skips_job_that_is_no_longer_queued(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            store = StateStore(base / "jack.db")
+            store.upsert_drive("/dev/sr0", "audio")
+            job_id = store.enqueue_job("/dev/sr0", "audio")
+            store.finish_job(job_id, "error", error="Superseded by restart")
+            runner = self._runner(base, store)
+            runner.starting.add("/dev/sr0")
+            with mock.patch("subprocess.Popen") as popen:
+                runner._run_job(job_id)
+            popen.assert_not_called()
+            self.assertNotIn("/dev/sr0", runner.starting)
+
+    def test_cancelled_job_does_not_start_next_track(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            store = StateStore(base / "jack.db")
+            metadata = '{"title": "Movie", "selected_tracks": [0, 1]}'
+            store.upsert_drive("/dev/sr0", "video", metadata_json=metadata)
+            job_id = store.enqueue_job("/dev/sr0", "video", metadata_json=metadata, source="web")
+            runner = self._runner(base, store)
+            calls = []
+
+            def fake_popen(command, **_kwargs):
+                calls.append(command)
+                process = mock.Mock(returncode=0)
+                process.poll.return_value = 0
+
+                def communicate():
+                    runner.restart_drive("/dev/sr0")
+                    return ("", None)
+
+                process.communicate.side_effect = communicate
+                return process
+
+            with mock.patch("subprocess.Popen", side_effect=fake_popen):
+                runner._run_job(job_id)
+            self.assertEqual(len(calls), 1)
+            job = store.get_job(job_id)
+            self.assertEqual(job["status"], "error")
+            self.assertEqual(job["error"], "Restart requested from web UI")
+            self.assertEqual(runner.processes, {})
+            self.assertEqual(store.latest_job_for_drive("/dev/sr0")["status"], "queued")
+
+    def test_video_job_without_selection_rips_all(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            store = StateStore(base / "jack.db")
+            store.upsert_drive("/dev/sr0", "video")
+            job_id = store.enqueue_job("/dev/sr0", "video", metadata_json='{"title": "Movie"}', source="manual")
+            runner = self._runner(base, store)
+            process = mock.Mock(returncode=0)
+            process.communicate.return_value = ("", None)
+            with mock.patch("subprocess.Popen", return_value=process) as popen:
+                runner._run_job(job_id)
+            self.assertIn("all", popen.call_args[0][0])
+            self.assertEqual(store.get_job(job_id)["status"], "done")
+
+    def test_dispatch_runs_manual_jobs_when_auto_rip_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            store = StateStore(base / "jack.db")
+            store.set_setting("auto_rip_enabled", "false")
+            store.upsert_drive("/dev/sr0", "audio")
+            store.upsert_drive("/dev/sr1", "audio")
+            store.enqueue_job("/dev/sr0", "audio", source="udev")
+            manual = store.enqueue_job("/dev/sr1", "audio", source="restart")
+            runner = self._runner(base, store)
+            with mock.patch("jack.ripper.threading.Thread") as thread:
+                runner.dispatch()
+            self.assertEqual(thread.call_count, 1)
+            self.assertEqual(thread.call_args.kwargs["args"], (manual,))
+
     def test_send_webhook_logs_when_url_missing(self) -> None:
         runner = JobRunner(
             SimpleNamespace(

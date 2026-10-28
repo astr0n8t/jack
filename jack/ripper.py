@@ -208,6 +208,10 @@ def discover_makemkv_tracks(device: str) -> list[dict[str, object]]:
     return [by_title[key] for key in sorted(by_title)]
 
 
+MANUAL_JOB_SOURCES = ("web", "restart", "manual")
+RESTART_MESSAGE = "Restart requested from web UI"
+
+
 class JobRunner:
     def __init__(self, config: Config, store: StateStore):
         self.config = config
@@ -215,6 +219,7 @@ class JobRunner:
         self.lock = threading.Lock()
         self.processes: dict[str, tuple[int, subprocess.Popen[str]]] = {}
         self.starting: set[str] = set()
+        self.cancelled: set[int] = set()
 
     def is_busy(self, device: str) -> bool:
         with self.lock:
@@ -226,27 +231,33 @@ class JobRunner:
             return None
         with self.lock:
             running = self.processes.get(device)
+            if running:
+                self.cancelled.add(running[0])
         if running:
             job_id, process = running
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-            self.store.set_job_error(job_id, "Restart requested from web UI")
+            # Mark the job as cancelled before killing it so the worker thread
+            # does not start the next selected track or overwrite the status.
+            self.store.set_job_error(job_id, RESTART_MESSAGE)
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
         return self.store.restart_job(int(latest["id"]))
 
     def eject(self, device: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(["eject", device], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
     def dispatch(self) -> None:
-        if self.store.get_setting("auto_rip_enabled", "true") == "false":
-            return
+        auto_rip = self.store.get_setting("auto_rip_enabled", "true") != "false"
         for job in self.store.claim_queued_jobs():
-            device = str(job["device"])
-            if self.is_busy(device):
+            # Jobs explicitly requested by the user always run; auto-rip only
+            # gates jobs queued automatically from disc insertion.
+            if not auto_rip and str(job["source"]) not in MANUAL_JOB_SOURCES:
                 continue
+            device = str(job["device"])
             with self.lock:
                 if device in self.processes or device in self.starting:
                     continue
@@ -255,13 +266,34 @@ class JobRunner:
                 target=self._run_job, args=(int(job["id"]),), daemon=True)
             thread.start()
 
+    def _is_cancelled(self, job_id: int) -> bool:
+        with self.lock:
+            return job_id in self.cancelled
+
+    def _run_process(self, job_id: int, device: str, command: list[str]) -> None:
+        with self.lock:
+            if job_id in self.cancelled:
+                raise RuntimeError(RESTART_MESSAGE)
+            process = subprocess.Popen(
+                command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            self.starting.discard(device)
+            self.processes[device] = (job_id, process)
+        stdout, _ = process.communicate()
+        if process.returncode != 0:
+            raise RuntimeError(stdout.strip() or f"Command failed with exit code {
+                               process.returncode}")
+
     def _run_job(self, job_id: int) -> None:
         job = self.store.get_job(job_id)
         if job is None:
             return
         device = str(job["device"])
-        process: subprocess.Popen[str] | None = None
+        output_dir: Path | None = None
         try:
+            # The job may have been superseded by a restart between being
+            # listed by the dispatcher and this thread starting.
+            if str(job["status"]) != "queued":
+                return
             if (
                 str(job["disc_type"]) == "video"
                 and str(job["source"]) == VIDEO_TRACK_SCAN_SOURCE
@@ -274,60 +306,52 @@ class JobRunner:
                 metadata = json.loads(str(metadata_json or "{}"))
             except json.JSONDecodeError:
                 metadata = {}
-            title = "UNKNOWN " + str(job_id)
-            if isinstance(metadata, dict) and 'title' in metadata:
-                title = metadata['title']
+            if not isinstance(metadata, dict):
+                metadata = {}
+            title = str(metadata.get("title") or f"UNKNOWN {job_id}")
             output_dir = build_output_dir(
                 self.config.output_dir, str(job["disc_type"]), title)
             output_dir.mkdir(parents=True, exist_ok=True)
-            if str(job["disc_type"]) == "video" and isinstance(metadata, dict):
-                selected = metadata.get("selected_tracks")
-                if isinstance(selected, list):
-                    job = self.store.mark_job_running(
-                        job_id, f" Running makemkvcon for {len(selected)} tracks")
-                    for track in selected:
-                        if str(track).isdigit():
-                            command = build_command(
-                                job, output_dir, str(track))
-                            process = subprocess.Popen(
-                                command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                            with self.lock:
-                                self.starting.discard(device)
-                                self.processes[device] = (job_id, process)
-                            stdout, _ = process.communicate()
-                            if process.returncode != 0:
-                                raise RuntimeError(stdout.strip() or f"Command failed with exit code {
-                                                   process.returncode}")
+            selected = metadata.get("selected_tracks")
+            if str(job["disc_type"]) == "video" and isinstance(selected, list):
+                tracks = [str(track)
+                          for track in selected if str(track).isdigit()]
+                if not tracks:
+                    raise RuntimeError("No tracks selected")
+                job = self.store.mark_job_running(
+                    job_id, f"Running makemkvcon for {len(tracks)} tracks")
+                for track in tracks:
+                    self._run_process(
+                        job_id, device, build_command(job, output_dir, track))
             else:
                 command = build_command(job, output_dir)
                 job = self.store.mark_job_running(job_id, " ".join(command))
-                process = subprocess.Popen(
-                    command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                with self.lock:
-                    self.starting.discard(device)
-                    self.processes[device] = (job_id, process)
-                stdout, _ = process.communicate()
-                if process.returncode != 0:
-                    raise RuntimeError(stdout.strip() or f"Command failed with exit code {
-                                       process.returncode}")
+                self._run_process(job_id, device, command)
             finished = self.store.finish_job(
                 job_id, "done", output_path=str(output_dir))
             self.send_webhook("completed", finished)
         except Exception as exc:  # noqa: BLE001
+            if self._is_cancelled(job_id):
+                return
             finished = self.store.finish_job(
-                job_id, "error", output_path=str(output_dir), error=str(exc))
+                job_id, "error", output_path=str(output_dir) if output_dir else None, error=str(exc))
             self.send_webhook("error", finished)
         finally:
-            if self.config.chown_user and self.config.chown_group:
-                chmod_cmd = ["chown", "-R", self.config.chown_user +
-                             ":" + self.config.chown_group, str(output_dir)]
-                process = subprocess.Popen(
-                    chmod_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                stdout, _ = process.communicate()
-            with self.lock:
-                self.starting.discard(device)
-                if process is not None:
-                    self.processes.pop(device, None)
+            try:
+                if output_dir is not None and self.config.chown_user and self.config.chown_group:
+                    subprocess.run(
+                        ["chown", "-R", self.config.chown_user + ":" +
+                            self.config.chown_group, str(output_dir)],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False)
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("chown failed for %s", output_dir)
+            finally:
+                with self.lock:
+                    self.starting.discard(device)
+                    current = self.processes.get(device)
+                    if current is not None and current[0] == job_id:
+                        self.processes.pop(device, None)
+                    self.cancelled.discard(job_id)
 
     def _run_track_discovery_job(self, job_id: int, job: Mapping[str, object]) -> None:
         device = str(job["device"])

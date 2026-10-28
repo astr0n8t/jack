@@ -191,9 +191,12 @@ class StateStore:
             job = conn.execute(
                 "SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             drive_status = "idle" if status == "done" else "error"
+            # Only touch the drive if this job is still its active job, so a
+            # finishing job does not clobber the state of a newer queued job.
             conn.execute(
-                "UPDATE drives SET status=?, active_job_id=NULL, last_error=?, updated_at=? WHERE device=?",
-                (drive_status, error, now, job["device"]),
+                "UPDATE drives SET status=?, active_job_id=NULL, last_error=?, updated_at=? "
+                "WHERE device=? AND (active_job_id IS NULL OR active_job_id=?)",
+                (drive_status, error, now, job["device"], job_id),
             )
             return job
 
@@ -252,7 +255,17 @@ class StateStore:
             raise KeyError(f"Unknown job {job_id}")
         drive = self.get_drive(job["device"])
         metadata_json = drive["metadata_json"] if drive else job["metadata_json"]
-        return self.enqueue_job(job["device"], job["disc_type"], metadata_json=metadata_json, source="restart", force=True)
+        now = utcnow()
+        with self.connect() as conn:
+            # Drop any jobs still waiting for this drive so a restart does not
+            # leave duplicate jobs queued behind each other.
+            conn.execute(
+                "UPDATE jobs SET status='error', error=?, finished_at=?, updated_at=? WHERE device=? AND status='queued'",
+                ("Superseded by restart", now, now, job["device"]),
+            )
+        # Restarting a track scan should rescan rather than rip.
+        source = job["source"] if job["source"] == "video-track-scan" else "restart"
+        return self.enqueue_job(job["device"], job["disc_type"], metadata_json=metadata_json, source=source, force=True)
 
 
 def parse_metadata(text: str) -> dict[str, str]:

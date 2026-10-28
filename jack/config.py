@@ -15,8 +15,8 @@ class Config:
     webhook_success_url: str | None
     webhook_error_url: str | None
     poll_interval: float
-    chown_user: str | None
-    chown_group: str | None
+    chown_user: str | None = None
+    chown_group: str | None = None
     webhook_header: str | None = None
 
 

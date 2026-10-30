@@ -4,6 +4,14 @@ note: *partially* vibecoded using copilot
 
 jack is a minimal multi-drive autoripper built in Python 3. It uses udev to queue discs, MakeMKV for video, whipper for audio, and a lightweight web UI to monitor and control jobs.
 
+![jack web UI showing three drives and the recent jobs table](docs/screenshots/desktop.png)
+
+<details>
+<summary>Mobile view</summary>
+
+<img src="docs/screenshots/mobile.png" alt="jack web UI on a phone-width screen" width="320">
+
+</details>
 
 ## Features
 - Ubuntu 24.04 Docker image
